@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdminRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 let cachedAllActiveStores: { data: { id: string; nome: string }[]; expiresAt: number } | null = null;
@@ -15,7 +15,7 @@ export async function GET() {
   }
 
   let authorizedStores: { id: string; nome: string }[] = [];
-  if (session.role === 'ADMIN') {
+  if (isAdminRole(session.role)) {
     if (cachedAllActiveStores && cachedAllActiveStores.expiresAt > Date.now()) {
       authorizedStores = cachedAllActiveStores.data;
     } else {
@@ -43,6 +43,7 @@ export async function GET() {
       avatarUrl: session.avatarUrl || null,
       role: session.role,
       status: session.status,
+      mustChangePassword: Boolean(session.mustChangePassword),
       stores: authorizedStores,
     },
   });

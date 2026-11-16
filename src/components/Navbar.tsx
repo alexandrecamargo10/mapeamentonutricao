@@ -18,6 +18,7 @@ import {
   AlertCircle,
   Trash2,
   Settings,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -28,6 +29,7 @@ interface NavbarProps {
     telefone?: string | null;
     avatarUrl?: string | null;
     role: string;
+    mustChangePassword?: boolean;
     stores: { id: string; nome: string }[];
   };
   currentStoreId?: string;
@@ -59,7 +61,15 @@ export default function Navbar({
   // Local profile state synced with user prop
   const [profileUser, setProfileUser] = useState(user);
   useEffect(() => {
-    if (user) setProfileUser(user);
+    if (user) {
+      setProfileUser(user);
+      if (user.mustChangePassword) {
+        setEditNome(user.nome || '');
+        setEditTelefone(user.telefone || '');
+        setEditAvatar(user.avatarUrl || null);
+        setProfileModalOpen(true);
+      }
+    }
   }, [user]);
 
   // Profile Modal state
@@ -75,6 +85,9 @@ export default function Navbar({
   const [profileSuccess, setProfileSuccess] = useState('');
 
   if (!profileUser) return null;
+
+  const isAdmin = profileUser.role === 'ADMIN' || profileUser.role === 'SUPER_ADMIN';
+  const isForcePasswordChange = Boolean(profileUser.mustChangePassword);
 
   const openProfileModal = () => {
     setEditNome(profileUser.nome || '');
@@ -102,7 +115,6 @@ export default function Navbar({
     reader.onload = (evt) => {
       const img = new Image();
       img.onload = () => {
-        // Redimensiona a imagem para 180x180px (quadrada centralizada) em JPEG leve
         const canvas = document.createElement('canvas');
         const size = 180;
         canvas.width = size;
@@ -128,8 +140,13 @@ export default function Navbar({
     setProfileError('');
     setProfileSuccess('');
 
+    if (isForcePasswordChange && !newPassword) {
+      setProfileError('Por segurança, você precisa definir uma nova senha pessoal para continuar.');
+      return;
+    }
+
     if (newPassword || confirmNewPassword) {
-      if (!currentPassword) {
+      if (!isForcePasswordChange && !currentPassword) {
         setProfileError('Digite sua senha atual para poder alterá-la.');
         return;
       }
@@ -168,6 +185,7 @@ export default function Navbar({
         nome: data.user.nome,
         telefone: data.user.telefone,
         avatarUrl: data.user.avatarUrl,
+        mustChangePassword: Boolean(data.user.mustChangePassword),
       };
       setProfileUser(updatedUser);
       setCachedClientUser(updatedUser);
@@ -194,6 +212,12 @@ export default function Navbar({
 
   const roleBadge = () => {
     switch (profileUser.role) {
+      case 'SUPER_ADMIN':
+        return (
+          <span className="bg-amber-100 text-amber-900 text-[11px] px-2 py-0.5 rounded-full font-bold border border-amber-300">
+            🛡️ Super Admin
+          </span>
+        );
       case 'ADMIN':
         return (
           <span className="bg-purple-100 text-purple-800 text-[11px] px-2 py-0.5 rounded-full font-semibold border border-purple-200">
@@ -242,7 +266,7 @@ export default function Navbar({
 
               {/* Desktop Navigation */}
               <nav className="hidden md:flex items-center space-x-1">
-                {profileUser.role === 'ADMIN' ? (
+                {isAdmin ? (
                   <>
                     <Link
                       href="/admin"
@@ -337,7 +361,7 @@ export default function Navbar({
             {/* Right side: Store switcher (for 360 / admin) and Clickable User Profile */}
             <div className="hidden md:flex items-center space-x-3">
               {(profileUser.role === 'ESTAGIARIO_360' ||
-                (profileUser.role === 'ADMIN' && pathname.startsWith('/loja'))) &&
+                (isAdmin && pathname.startsWith('/loja'))) &&
                 profileUser.stores &&
                 profileUser.stores.length > 1 &&
                 onStoreChange && (
@@ -436,7 +460,7 @@ export default function Navbar({
             </button>
 
             {/* Store switcher on mobile */}
-            {(profileUser.role === 'ESTAGIARIO_360' || profileUser.role === 'ADMIN') &&
+            {(profileUser.role === 'ESTAGIARIO_360' || isAdmin) &&
               profileUser.stores &&
               profileUser.stores.length > 1 &&
               onStoreChange && (
@@ -467,7 +491,7 @@ export default function Navbar({
                 <span>Meu Perfil (Foto, Senha e Telefone)</span>
               </button>
 
-              {profileUser.role === 'ADMIN' ? (
+              {isAdmin ? (
                 <>
                   <Link
                     href="/admin"
@@ -548,22 +572,40 @@ export default function Navbar({
         )}
       </header>
 
-      {/* MODAL DE AJUSTES DO MEU PERFIL */}
+      {/* MODAL DE AJUSTES DO MEU PERFIL / TROCA OBRIGATÓRIA DE SENHA PROVISÓRIA */}
       {profileModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Configurações do Meu Perfil</h3>
+                <h3 className="text-lg font-bold text-slate-900">
+                  {isForcePasswordChange
+                    ? '🔒 Troca Obrigatória de Senha Provisória'
+                    : 'Configurações do Meu Perfil'}
+                </h3>
                 <p className="text-xs text-slate-500">{profileUser.email}</p>
               </div>
-              <button
-                onClick={() => setProfileModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg"
-              >
-                ✕
-              </button>
+              {!isForcePasswordChange && (
+                <button
+                  onClick={() => setProfileModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg"
+                >
+                  ✕
+                </button>
+              )}
             </div>
+
+            {isForcePasswordChange && (
+              <div className="p-3.5 bg-amber-50 border border-amber-300 text-amber-900 text-xs rounded-xl font-medium flex items-start space-x-2.5">
+                <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-bold">Sua senha atual é provisória!</strong>
+                  <span>
+                    Um administrador redefiniu sua senha. Por segurança e privacidade, crie agora uma nova senha definitiva exclusiva sua para continuar.
+                  </span>
+                </div>
+              </div>
+            )}
 
             {profileError && (
               <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl font-medium flex items-start space-x-2">
@@ -663,28 +705,34 @@ export default function Navbar({
               <div className="pt-3 border-t border-slate-200 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                    Alterar Senha (Opcional)
+                    {isForcePasswordChange
+                      ? 'Defina sua Nova Senha Pessoal (Obrigatório)'
+                      : 'Alterar Senha (Opcional)'}
                   </span>
-                  <span className="text-[10px] text-slate-400">
-                    Preencha apenas se desejar trocar
-                  </span>
+                  {!isForcePasswordChange && (
+                    <span className="text-[10px] text-slate-400">
+                      Preencha apenas se desejar trocar
+                    </span>
+                  )}
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                    Senha Atual
-                  </label>
-                  <div className="relative">
-                    <Lock className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="password"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      placeholder="Digite sua senha atual"
-                      className="w-full pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500"
-                    />
+                {!isForcePasswordChange && (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      Senha Atual
+                    </label>
+                    <div className="relative">
+                      <Lock className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="password"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        placeholder="Digite sua senha atual"
+                        className="w-full pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-2.5">
                   <div>
@@ -693,6 +741,7 @@ export default function Navbar({
                     </label>
                     <input
                       type="password"
+                      required={isForcePasswordChange}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="Mín. 6 caracteres"
@@ -705,6 +754,7 @@ export default function Navbar({
                     </label>
                     <input
                       type="password"
+                      required={isForcePasswordChange}
                       value={confirmNewPassword}
                       onChange={(e) => setConfirmNewPassword(e.target.value)}
                       placeholder="Repita a nova senha"
@@ -715,13 +765,15 @@ export default function Navbar({
               </div>
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setProfileModalOpen(false)}
-                  className="py-2 px-4 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
-                >
-                  Fechar
-                </button>
+                {!isForcePasswordChange && (
+                  <button
+                    type="button"
+                    onClick={() => setProfileModalOpen(false)}
+                    className="py-2 px-4 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                  >
+                    Fechar
+                  </button>
+                )}
                 <button
                   type="submit"
                   disabled={savingProfile}

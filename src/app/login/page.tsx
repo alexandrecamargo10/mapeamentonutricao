@@ -49,7 +49,7 @@ export default function LoginPage() {
 
       // Success: armazena perfil de UI em memória para abertura instantânea da próxima tela
       setCachedClientUser(data.user);
-      if (data.user.role === 'ADMIN') {
+      if (data.user.role === 'ADMIN' || data.user.role === 'SUPER_ADMIN') {
         router.push('/admin');
       } else {
         router.push('/loja');

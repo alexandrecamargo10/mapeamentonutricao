@@ -8,15 +8,16 @@ datasource db {
 }
 
 model User {
-  id            String      @id @default(cuid())
-  nome          String
-  email         String      @unique
-  passwordHash  String
-  telefone      String?
-  avatarUrl     String?
-  role          String      @default("ESTAGIARIO_PADRAO") // "ADMIN", "ESTAGIARIO_PADRAO", "ESTAGIARIO_360"
-  status        String      @default("PENDENTE") // "PENDENTE", "APROVADO", "REJEITADO", "INATIVO"
-  aprovadoPor   String?
+  id                 String      @id @default(cuid())
+  nome               String
+  email              String      @unique
+  passwordHash       String
+  telefone           String?
+  avatarUrl          String?
+  role               String      @default("ESTAGIARIO_PADRAO") // "SUPER_ADMIN", "ADMIN", "ESTAGIARIO_PADRAO", "ESTAGIARIO_360"
+  status             String      @default("PENDENTE") // "PENDENTE", "APROVADO", "REJEITADO", "INATIVO"
+  mustChangePassword Boolean     @default(false)
+  aprovadoPor        String?
   dataAprovacao DateTime?
   userStores    UserStore[]
   registrosCriados ValidityRecord[] @relation("RegistradoPor")

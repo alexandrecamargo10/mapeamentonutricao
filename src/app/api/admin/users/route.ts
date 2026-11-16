@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getSession, hashPassword, invalidateSessionCache } from '@/lib/auth';
+import {
+  getSession,
+  hashPassword,
+  verifyPassword,
+  invalidateSessionCache,
+  isAdminRole,
+  isSuperAdminRole,
+} from '@/lib/auth';
 
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session || session.role !== 'ADMIN' || session.status !== 'APROVADO') {
+  if (!session || !isAdminRole(session.role) || session.status !== 'APROVADO') {
     return NextResponse.json({ error: 'Acesso restrito para administradores.' }, { status: 403 });
   }
 
@@ -27,6 +34,7 @@ export async function GET(request: Request) {
       avatarUrl: true,
       role: true,
       status: true,
+      mustChangePassword: true,
       aprovadoPor: true,
       dataAprovacao: true,
       createdAt: true,
@@ -48,13 +56,13 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   const session = await getSession();
-  if (!session || session.role !== 'ADMIN' || session.status !== 'APROVADO') {
+  if (!session || !isAdminRole(session.role) || session.status !== 'APROVADO') {
     return NextResponse.json({ error: 'Acesso restrito para administradores.' }, { status: 403 });
   }
 
   try {
     const body = await request.json();
-    const { userId, action, role, storeIds, newPassword } = body;
+    const { userId, action, role, storeIds, newPassword, adminCurrentPassword } = body;
 
     if (!userId || !action) {
       return NextResponse.json({ error: 'userId e action são obrigatórios.' }, { status: 400 });
@@ -65,21 +73,88 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Usuário não encontrado.' }, { status: 404 });
     }
 
-    // Proteção contra auto-bloqueio, auto-exclusão ou auto-rebaixamento de administrador
+    const targetRole = role || user.role;
+
+    // 1. Proteção contra auto-bloqueio, auto-exclusão ou auto-rebaixamento
     if (
       user.id === session.userId &&
-      (action === 'REJEITAR' || action === 'SUSPENDER' || action === 'EXCLUIR' || (role && role !== 'ADMIN'))
+      (action === 'REJEITAR' ||
+        action === 'SUSPENDER' ||
+        action === 'EXCLUIR' ||
+        (role && role !== session.role))
     ) {
       return NextResponse.json(
-        { error: 'Operação bloqueada: você não pode excluir, desativar ou remover o perfil de administrador da sua própria conta.' },
+        {
+          error:
+            'Operação bloqueada: você não pode excluir, desativar ou alterar o nível de permissão da sua própria conta.',
+        },
         { status: 400 }
       );
+    }
+
+    // 2. Opção 1: Hierarquia SUPER_ADMIN vs ADMIN
+    // Apenas um SuperAdmin pode promover ou despromover alguém a SuperAdmin
+    if (
+      (targetRole === 'SUPER_ADMIN' || user.role === 'SUPER_ADMIN') &&
+      !isSuperAdminRole(session.role)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'Acesso negado: apenas um Super Admin pode promover, despromover ou gerenciar um Super Admin.',
+        },
+        { status: 403 }
+      );
+    }
+
+    // Um ADMIN comum não pode gerenciar (alterar senha, excluir, suspender ou promover) outros Administradores
+    if (
+      !isSuperAdminRole(session.role) &&
+      (isAdminRole(user.role) || isAdminRole(targetRole))
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'Acesso negado: Administradores comuns só podem gerenciar contas e senhas de Estagiários. Apenas o Super Admin pode gerenciar Administradores.',
+        },
+        { status: 403 }
+      );
+    }
+
+    // 3. Opção 2: Reautenticação obrigatória do Super Admin ao redefinir a senha de outro Administrador
+    const isChangingPassword =
+      action === 'ALTERAR_SENHA' || Boolean(newPassword && String(newPassword).trim().length > 0);
+
+    if (isChangingPassword && isAdminRole(user.role) && user.id !== session.userId) {
+      if (!adminCurrentPassword) {
+        return NextResponse.json(
+          {
+            error:
+              'Por segurança, confirme a SUA senha atual de Super Admin para redefinir a senha de outro Administrador.',
+          },
+          { status: 400 }
+        );
+      }
+
+      const currentAdminDb = await prisma.user.findUnique({
+        where: { id: session.userId },
+      });
+
+      if (
+        !currentAdminDb ||
+        !(await verifyPassword(String(adminCurrentPassword), currentAdminDb.passwordHash))
+      ) {
+        return NextResponse.json(
+          { error: 'A sua senha de Super Admin informada está incorreta.' },
+          { status: 401 }
+        );
+      }
     }
 
     if (action === 'ALTERAR_SENHA') {
       if (!newPassword || String(newPassword).length < 6) {
         return NextResponse.json(
-          { error: 'A nova senha deve ter no mínimo 6 caracteres.' },
+          { error: 'A senha provisória deve ter no mínimo 6 caracteres.' },
           { status: 400 }
         );
       }
@@ -87,21 +162,29 @@ export async function PATCH(request: Request) {
       const passwordHash = await hashPassword(String(newPassword));
       await prisma.user.update({
         where: { id: user.id },
-        data: { passwordHash },
+        data: {
+          passwordHash,
+          mustChangePassword: true, // Opção 2: Marca senha como provisória (exige troca no próximo login)
+        },
       });
       invalidateSessionCache(user.id);
 
       await prisma.auditLog.create({
         data: {
-          acao: 'ALTERACAO_SENHA_POR_ADMIN',
+          acao: 'ALTERACAO_SENHA_PROVISORIA_POR_ADMIN',
           userId: session.userId,
-          detalhes: JSON.stringify({ alvoUserId: user.id, email: user.email }),
+          detalhes: JSON.stringify({
+            alvoUserId: user.id,
+            email: user.email,
+            alvoRole: user.role,
+            mustChangePassword: true,
+          }),
         },
       });
 
       return NextResponse.json({
         success: true,
-        message: `Senha de ${user.nome} alterada com sucesso!`,
+        message: `Senha provisória definida para ${user.nome}! No próximo login, o sistema solicitará que o usuário escolha uma senha pessoal definitiva.`,
       });
     }
 
@@ -122,7 +205,10 @@ export async function PATCH(request: Request) {
         where: { id: user.id },
       });
       invalidateSessionCache(user.id);
-      return NextResponse.json({ success: true, message: 'Usuário excluído permanentemente com sucesso.' });
+      return NextResponse.json({
+        success: true,
+        message: 'Usuário excluído permanentemente com sucesso.',
+      });
     }
 
     if (action === 'REJEITAR') {
@@ -158,15 +244,14 @@ export async function PATCH(request: Request) {
     }
 
     if (action === 'APROVAR' || action === 'ATUALIZAR') {
-      const validRoles = ['ADMIN', 'ESTAGIARIO_PADRAO', 'ESTAGIARIO_360'];
-      const targetRole = role || user.role;
+      const validRoles = ['SUPER_ADMIN', 'ADMIN', 'ESTAGIARIO_PADRAO', 'ESTAGIARIO_360'];
       if (!validRoles.includes(targetRole)) {
         return NextResponse.json({ error: 'Perfil de usuário inválido.' }, { status: 400 });
       }
 
       if (newPassword && String(newPassword).length < 6) {
         return NextResponse.json(
-          { error: 'A nova senha deve ter no mínimo 6 caracteres.' },
+          { error: 'A nova senha provisória deve ter no mínimo 6 caracteres.' },
           { status: 400 }
         );
       }
@@ -175,11 +260,14 @@ export async function PATCH(request: Request) {
         ? Array.from(new Set(storeIds.map((s) => String(s).trim()).filter(Boolean)))
         : [];
 
-      // Enforce business rules
+      // Enforce business rules for interns
       if (targetRole === 'ESTAGIARIO_PADRAO') {
         if (targetStores.length !== 1) {
           return NextResponse.json(
-            { error: 'O Estagiário Padrão deve possuir exatamente 1 loja atribuída. Para múltiplas lojas, utilize o perfil Estagiário 360.' },
+            {
+              error:
+                'O Estagiário Padrão deve possuir exatamente 1 loja atribuída. Para múltiplas lojas, utilize o perfil Estagiário 360.',
+            },
             { status: 400 }
           );
         }
@@ -195,9 +283,9 @@ export async function PATCH(request: Request) {
       const extraPasswordData: Record<string, any> = {};
       if (newPassword && String(newPassword).trim().length >= 6) {
         extraPasswordData.passwordHash = await hashPassword(String(newPassword));
+        extraPasswordData.mustChangePassword = true;
       }
 
-      // Update user details & store links atomically inside a transaction
       const updatedUser = await prisma.$transaction(async (tx) => {
         const u = await tx.user.update({
           where: { id: user.id },
@@ -216,13 +304,14 @@ export async function PATCH(request: Request) {
             avatarUrl: true,
             role: true,
             status: true,
+            mustChangePassword: true,
             aprovadoPor: true,
             dataAprovacao: true,
           },
         });
 
         await tx.userStore.deleteMany({ where: { userId: user.id } });
-        if (targetRole !== 'ADMIN' && targetStores.length > 0) {
+        if (!isAdminRole(targetRole) && targetStores.length > 0) {
           await tx.userStore.createMany({
             data: targetStores.map((sId) => ({
               userId: user.id,
@@ -238,6 +327,7 @@ export async function PATCH(request: Request) {
             detalhes: JSON.stringify({
               alvoUserId: user.id,
               email: user.email,
+              roleAnterior: user.role,
               novoRole: targetRole,
               lojas: targetStores,
               senhaRedefinida: Boolean(extraPasswordData.passwordHash),
@@ -252,7 +342,10 @@ export async function PATCH(request: Request) {
 
       return NextResponse.json({
         success: true,
-        message: action === 'APROVAR' ? 'Usuário aprovado com sucesso!' : 'Usuário atualizado com sucesso!',
+        message:
+          action === 'APROVAR'
+            ? 'Usuário aprovado com sucesso!'
+            : 'Usuário atualizado com sucesso!',
         user: updatedUser,
       });
     }

@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdminRole } from '@/lib/auth';
 
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session || session.role !== 'ADMIN' || session.status !== 'APROVADO') {
+  if (!session || !isAdminRole(session.role) || session.status !== 'APROVADO') {
     return NextResponse.json({ error: 'Acesso restrito para administradores.' }, { status: 403 });
   }
 
@@ -53,7 +53,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const session = await getSession();
-  if (!session || session.role !== 'ADMIN' || session.status !== 'APROVADO') {
+  if (!session || !isAdminRole(session.role) || session.status !== 'APROVADO') {
     return NextResponse.json({ error: 'Acesso restrito para administradores.' }, { status: 403 });
   }
 
@@ -132,7 +132,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   const session = await getSession();
-  if (!session || session.role !== 'ADMIN' || session.status !== 'APROVADO') {
+  if (!session || !isAdminRole(session.role) || session.status !== 'APROVADO') {
     return NextResponse.json({ error: 'Acesso restrito para administradores.' }, { status: 403 });
   }
 

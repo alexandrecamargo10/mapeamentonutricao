@@ -34,14 +34,20 @@ async function runTests() {
   // Test 1: Verificar carga de dados iniciais
   const storeCount = await prisma.store.count();
   const prodCount = await prisma.product.count();
-  const adminCount = await prisma.user.count({ where: { role: 'ADMIN' } });
+  const adminCount = await prisma.user.count({
+    where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] } },
+  });
+  const superAdmin = await prisma.user.findUnique({
+    where: { email: 'danielelopesraya@gmail.com' },
+  });
 
   console.log(`[TEST 1] Banco de Dados Inicial:`);
   console.log(`   - Lojas carregadas: ${storeCount} (Esperado: 75)`);
   console.log(`   - Produtos carregados: ${prodCount} (Esperado: 1115)`);
-  console.log(`   - Administradores: ${adminCount} (Esperado: 5)`);
-  if (storeCount !== 75 || prodCount !== 1115 || adminCount !== 5) {
-    throw new Error('Falha no Teste 1: Quantidade de registros legados divergente.');
+  console.log(`   - Administradores totais: ${adminCount} (Esperado: 5)`);
+  console.log(`   - Super Admin (${superAdmin?.email}): ${superAdmin?.role}`);
+  if (storeCount !== 75 || prodCount !== 1115 || adminCount !== 5 || superAdmin?.role !== 'SUPER_ADMIN') {
+    throw new Error('Falha no Teste 1: Quantidade de registros legados ou Super Admin divergente.');
   }
   console.log('   ✅ Teste 1 aprovado!\n');
 

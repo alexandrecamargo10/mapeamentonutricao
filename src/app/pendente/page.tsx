@@ -16,7 +16,7 @@ export default function PendentePage() {
       const res = await fetch('/api/auth/me');
       const data = await res.json();
       if (data.authenticated && data.user.status === 'APROVADO') {
-        if (data.user.role === 'ADMIN') {
+        if (data.user.role === 'ADMIN' || data.user.role === 'SUPER_ADMIN') {
           router.push('/admin');
         } else {
           router.push('/loja');

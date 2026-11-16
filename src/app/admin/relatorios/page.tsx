@@ -40,7 +40,7 @@ export default function RelatoriosAdminPage() {
           fetch('/api/admin/stores'),
         ]);
 
-        if (!meUser || meUser.role !== 'ADMIN') {
+        if (!meUser || (meUser.role !== 'ADMIN' && meUser.role !== 'SUPER_ADMIN')) {
           router.replace('/login');
           return;
         }

@@ -46,7 +46,7 @@ export default function ProdutosAdminPage() {
         fetch(url),
       ]);
 
-      if (!meUser || meUser.role !== 'ADMIN') {
+      if (!meUser || (meUser.role !== 'ADMIN' && meUser.role !== 'SUPER_ADMIN')) {
         router.replace('/login');
         return;
       }

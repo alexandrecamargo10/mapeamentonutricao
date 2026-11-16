@@ -30,7 +30,7 @@ export default function LojasAdminPage() {
         fetch('/api/admin/stores'),
       ]);
 
-      if (!meUser || meUser.role !== 'ADMIN') {
+      if (!meUser || (meUser.role !== 'ADMIN' && meUser.role !== 'SUPER_ADMIN')) {
         router.replace('/login');
         return;
       }

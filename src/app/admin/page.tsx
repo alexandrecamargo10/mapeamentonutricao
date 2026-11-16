@@ -50,7 +50,7 @@ export default function AdminDashboardPage() {
           fetch('/api/admin/users?status=PENDENTE'),
         ]);
 
-        if (!meUser || meUser.role !== 'ADMIN') {
+        if (!meUser || (meUser.role !== 'ADMIN' && meUser.role !== 'SUPER_ADMIN')) {
           router.replace('/login');
           return;
         }

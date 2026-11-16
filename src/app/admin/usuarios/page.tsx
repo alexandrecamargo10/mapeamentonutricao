@@ -14,6 +14,8 @@ import {
   Trash2,
   KeyRound,
   Phone,
+  Shield,
+  Lock,
 } from 'lucide-react';
 
 export default function UsuariosAdminPage() {
@@ -29,9 +31,12 @@ export default function UsuariosAdminPage() {
   // Approval / Edit Modal state
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [targetRole, setTargetRole] = useState<'ESTAGIARIO_PADRAO' | 'ESTAGIARIO_360' | 'ADMIN'>('ESTAGIARIO_PADRAO');
+  const [targetRole, setTargetRole] = useState<
+    'ESTAGIARIO_PADRAO' | 'ESTAGIARIO_360' | 'ADMIN' | 'SUPER_ADMIN'
+  >('ESTAGIARIO_PADRAO');
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
   const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [editModalMyPassword, setEditModalMyPassword] = useState('');
   const [savingApproval, setSavingApproval] = useState(false);
   const [approvalError, setApprovalError] = useState('');
 
@@ -39,6 +44,7 @@ export default function UsuariosAdminPage() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordTargetUser, setPasswordTargetUser] = useState<any>(null);
   const [quickNewPassword, setQuickNewPassword] = useState('');
+  const [myAdminCurrentPassword, setMyAdminCurrentPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
   const [passwordModalMsg, setPasswordModalMsg] = useState('');
   const [passwordModalError, setPasswordModalError] = useState('');
@@ -51,7 +57,7 @@ export default function UsuariosAdminPage() {
         fetch('/api/admin/users'),
       ]);
 
-      if (!meUser || meUser.role !== 'ADMIN') {
+      if (!meUser || (meUser.role !== 'ADMIN' && meUser.role !== 'SUPER_ADMIN')) {
         router.replace('/login');
         return;
       }
@@ -77,6 +83,17 @@ export default function UsuariosAdminPage() {
     loadData();
   }, [router]);
 
+  const isCurrentSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  const isTargetAdminRole = (role?: string) => role === 'ADMIN' || role === 'SUPER_ADMIN';
+
+  // Verifica se o administrador logado tem permissão hierárquica (Opção 1) sobre o usuário-alvo
+  const canManageUser = (targetUser: any): boolean => {
+    if (!currentUser) return false;
+    if (isCurrentSuperAdmin) return true;
+    // Admin comum só gerencia Estagiários (não pode alterar outros Admins ou Super Admins)
+    return !isTargetAdminRole(targetUser.role);
+  };
+
   const pendingUsers = users.filter((u) => u.status === 'PENDENTE');
   const activeUsers = users.filter((u) => u.status !== 'PENDENTE');
 
@@ -89,10 +106,21 @@ export default function UsuariosAdminPage() {
 
   const openApproveModal = (u: any) => {
     setSelectedUser(u);
-    setTargetRole(u.role === 'ADMIN' ? 'ADMIN' : u.role === 'ESTAGIARIO_360' ? 'ESTAGIARIO_360' : 'ESTAGIARIO_PADRAO');
+    setTargetRole(
+      u.role === 'SUPER_ADMIN'
+        ? 'SUPER_ADMIN'
+        : u.role === 'ADMIN'
+        ? 'ADMIN'
+        : u.role === 'ESTAGIARIO_360'
+        ? 'ESTAGIARIO_360'
+        : 'ESTAGIARIO_PADRAO'
+    );
     const existingStoreIds = u.userStores ? u.userStores.map((us: any) => us.storeId) : [];
-    setSelectedStoreIds(existingStoreIds.length > 0 ? existingStoreIds : stores.length > 0 ? [stores[0].id] : []);
+    setSelectedStoreIds(
+      existingStoreIds.length > 0 ? existingStoreIds : stores.length > 0 ? [stores[0].id] : []
+    );
     setAdminNewPassword('');
+    setEditModalMyPassword('');
     setApprovalError('');
     setApprovalModalOpen(true);
   };
@@ -100,6 +128,7 @@ export default function UsuariosAdminPage() {
   const openPasswordModal = (u: any) => {
     setPasswordTargetUser(u);
     setQuickNewPassword('');
+    setMyAdminCurrentPassword('');
     setPasswordModalError('');
     setPasswordModalMsg('');
     setPasswordModalOpen(true);
@@ -111,7 +140,17 @@ export default function UsuariosAdminPage() {
     setPasswordModalMsg('');
 
     if (quickNewPassword.length < 6) {
-      setPasswordModalError('A nova senha deve ter no mínimo 6 caracteres.');
+      setPasswordModalError('A senha provisória deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
+    const requiresReauth =
+      isTargetAdminRole(passwordTargetUser.role) && passwordTargetUser.id !== currentUser?.id;
+
+    if (requiresReauth && !myAdminCurrentPassword) {
+      setPasswordModalError(
+        'Por segurança, confirme a SUA senha de Super Admin para redefinir a senha de outro Administrador.'
+      );
       return;
     }
 
@@ -124,6 +163,7 @@ export default function UsuariosAdminPage() {
           userId: passwordTargetUser.id,
           action: 'ALTERAR_SENHA',
           newPassword: quickNewPassword,
+          adminCurrentPassword: myAdminCurrentPassword || undefined,
         }),
       });
       const data = await res.json();
@@ -131,8 +171,10 @@ export default function UsuariosAdminPage() {
         setPasswordModalError(data.error || 'Erro ao alterar senha.');
         return;
       }
-      setPasswordModalMsg(data.message || 'Senha alterada com sucesso!');
+      setPasswordModalMsg(data.message || 'Senha provisória definida com sucesso!');
       setQuickNewPassword('');
+      setMyAdminCurrentPassword('');
+      loadData();
     } catch {
       setPasswordModalError('Erro de conexão ao alterar senha.');
     } finally {
@@ -158,7 +200,11 @@ export default function UsuariosAdminPage() {
 
   const handleDeleteUser = async (u: any) => {
     if (u.id === currentUser?.id) {
-      alert('Você não pode excluir sua própria conta de administrador.');
+      alert('Você não pode excluir sua própria conta.');
+      return;
+    }
+    if (!canManageUser(u)) {
+      alert('Apenas o Super Admin pode excluir contas de Administradores.');
       return;
     }
     if (
@@ -223,7 +269,19 @@ export default function UsuariosAdminPage() {
     }
 
     if (adminNewPassword && adminNewPassword.length < 6) {
-      setApprovalError('A nova senha deve ter no mínimo 6 caracteres.');
+      setApprovalError('A nova senha provisória deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
+    if (
+      adminNewPassword &&
+      isTargetAdminRole(selectedUser.role) &&
+      selectedUser.id !== currentUser?.id &&
+      !editModalMyPassword
+    ) {
+      setApprovalError(
+        'Confirme a SUA senha de Super Admin para redefinir a senha de outro Administrador.'
+      );
       return;
     }
 
@@ -236,8 +294,9 @@ export default function UsuariosAdminPage() {
           userId: selectedUser.id,
           action: selectedUser.status === 'PENDENTE' ? 'APROVAR' : 'ATUALIZAR',
           role: targetRole,
-          storeIds: targetRole === 'ADMIN' ? [] : selectedStoreIds,
+          storeIds: isTargetAdminRole(targetRole) ? [] : selectedStoreIds,
           newPassword: adminNewPassword || undefined,
+          adminCurrentPassword: editModalMyPassword || undefined,
         }),
       });
 
@@ -249,7 +308,7 @@ export default function UsuariosAdminPage() {
 
       setApprovalModalOpen(false);
       loadData();
-    } catch (err) {
+    } catch {
       setApprovalError('Erro de conexão ao salvar.');
     } finally {
       setSavingApproval(false);
@@ -284,7 +343,7 @@ export default function UsuariosAdminPage() {
               Gestão de Usuários & Estagiários
             </h1>
             <p className="text-xs text-slate-500 font-medium">
-              Controle de acesso, aprovação de cadastros, alteração de senhas e vinculação de lojas
+              Hierarquia de Super Admin, aprovação de cadastros, senhas provisórias e vinculação de lojas
             </p>
           </div>
 
@@ -354,14 +413,20 @@ export default function UsuariosAdminPage() {
             {filteredUsers.map((u) => {
               const userStores = u.userStores || [];
               const isSelf = u.id === currentUser?.id;
+              const allowedToManage = canManageUser(u);
+
               return (
                 <div
                   key={u.id}
-                  className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4 flex flex-col justify-between"
+                  className={`bg-white rounded-2xl p-5 border shadow-sm space-y-4 flex flex-col justify-between ${
+                    u.role === 'SUPER_ADMIN'
+                      ? 'border-amber-300 ring-1 ring-amber-200/60'
+                      : 'border-slate-200'
+                  }`}
                 >
                   <div className="space-y-3">
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center space-x-3">
+                      <div className="flex items-center space-x-3 min-w-0">
                         {u.avatarUrl ? (
                           <img
                             src={u.avatarUrl}
@@ -384,17 +449,24 @@ export default function UsuariosAdminPage() {
                           )}
                         </div>
                       </div>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
-                          u.status === 'PENDENTE'
-                            ? 'bg-amber-100 text-amber-800 border-amber-300'
-                            : u.status === 'APROVADO'
-                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                            : 'bg-rose-100 text-rose-700 border-rose-300'
-                        }`}
-                      >
-                        {u.status}
-                      </span>
+                      <div className="flex flex-col items-end space-y-1 shrink-0">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                            u.status === 'PENDENTE'
+                              ? 'bg-amber-100 text-amber-800 border-amber-300'
+                              : u.status === 'APROVADO'
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                              : 'bg-rose-100 text-rose-700 border-rose-300'
+                          }`}
+                        >
+                          {u.status}
+                        </span>
+                        {u.mustChangePassword && (
+                          <span className="text-[9px] font-bold bg-orange-100 text-orange-800 border border-orange-300 px-1.5 py-0.5 rounded">
+                            Senha Provisória
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Role & Stores Info */}
@@ -404,7 +476,9 @@ export default function UsuariosAdminPage() {
                           Perfil
                         </span>
                         <span className="font-bold text-slate-800">
-                          {u.role === 'ADMIN'
+                          {u.role === 'SUPER_ADMIN'
+                            ? '🛡️ Super Admin'
+                            : u.role === 'ADMIN'
                             ? '👑 Administrador'
                             : u.role === 'ESTAGIARIO_360'
                             ? '🌐 Estagiário 360'
@@ -416,8 +490,10 @@ export default function UsuariosAdminPage() {
                         <span className="text-slate-400 font-semibold uppercase text-[10px] block mb-1">
                           Lojas Autorizadas:
                         </span>
-                        {u.role === 'ADMIN' ? (
-                          <span className="text-purple-700 font-bold">Acesso a todas as 75 lojas</span>
+                        {isTargetAdminRole(u.role) ? (
+                          <span className="text-purple-700 font-bold">
+                            Acesso global a todas as 75 lojas
+                          </span>
                         ) : userStores.length === 0 ? (
                           <span className="text-slate-400 italic">Nenhuma loja vinculada</span>
                         ) : (
@@ -438,56 +514,69 @@ export default function UsuariosAdminPage() {
 
                   {/* Action buttons */}
                   <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-1.5">
-                    <div className="flex items-center space-x-1">
-                      {!isSelf ? (
-                        <button
-                          onClick={() => handleDeleteUser(u)}
-                          title="Excluir usuário permanentemente"
-                          className="p-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      ) : (
-                        <span className="text-[11px] text-slate-400 italic px-1.5">Sua conta</span>
-                      )}
+                    {!allowedToManage ? (
+                      <div className="w-full py-1.5 px-3 bg-slate-100 rounded-xl text-center text-[11px] text-slate-500 font-semibold flex items-center justify-center space-x-1.5">
+                        <Shield className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Gerenciado apenas por Super Admin</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center space-x-1">
+                          {!isSelf ? (
+                            <button
+                              onClick={() => handleDeleteUser(u)}
+                              title="Excluir usuário permanentemente"
+                              className="p-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 italic px-1.5">
+                              Sua conta
+                            </span>
+                          )}
 
-                      <button
-                        onClick={() => openPasswordModal(u)}
-                        title="Modificar senha deste usuário"
-                        className="py-1.5 px-2.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-colors flex items-center space-x-1"
-                      >
-                        <KeyRound className="w-3.5 h-3.5" />
-                        <span>Senha</span>
-                      </button>
-                    </div>
+                          {!isSelf && (
+                            <button
+                              onClick={() => openPasswordModal(u)}
+                              title="Definir senha provisória para este usuário"
+                              className="py-1.5 px-2.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-colors flex items-center space-x-1"
+                            >
+                              <KeyRound className="w-3.5 h-3.5" />
+                              <span>Senha</span>
+                            </button>
+                          )}
+                        </div>
 
-                    <div className="flex items-center space-x-1.5">
-                      {u.status === 'PENDENTE' ? (
-                        <>
-                          <button
-                            onClick={() => handleReject(u.id)}
-                            className="py-1.5 px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
-                          >
-                            Rejeitar
-                          </button>
-                          <button
-                            onClick={() => openApproveModal(u)}
-                            className="py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow transition-colors flex items-center space-x-1"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Aprovar</span>
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => openApproveModal(u)}
-                          className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors flex items-center space-x-1"
-                        >
-                          <Edit2 className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Editar Perfil / Lojas</span>
-                        </button>
-                      )}
-                    </div>
+                        <div className="flex items-center space-x-1.5">
+                          {u.status === 'PENDENTE' ? (
+                            <>
+                              <button
+                                onClick={() => handleReject(u.id)}
+                                className="py-1.5 px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                              >
+                                Rejeitar
+                              </button>
+                              <button
+                                onClick={() => openApproveModal(u)}
+                                className="py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow transition-colors flex items-center space-x-1"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Aprovar</span>
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => openApproveModal(u)}
+                              className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors flex items-center space-x-1"
+                            >
+                              <Edit2 className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Editar Perfil / Lojas</span>
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -496,13 +585,15 @@ export default function UsuariosAdminPage() {
         )}
       </main>
 
-      {/* QUICK PASSWORD RESET MODAL */}
+      {/* QUICK PASSWORD RESET MODAL (Opção 2: Senha Provisória + Reautenticação para Admins) */}
       {passwordModalOpen && passwordTargetUser && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div>
-                <h3 className="text-base font-bold text-slate-900">Modificar Senha de Usuário</h3>
+                <h3 className="text-base font-bold text-slate-900">
+                  Definir Senha Provisória
+                </h3>
                 <p className="text-xs text-slate-500">
                   {passwordTargetUser.nome} ({passwordTargetUser.email})
                 </p>
@@ -513,6 +604,11 @@ export default function UsuariosAdminPage() {
               >
                 ✕
               </button>
+            </div>
+
+            <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-[11px] text-amber-900 leading-relaxed">
+              <strong>🔒 Privacidade Garantida (Senha Provisória):</strong> Assim que{' '}
+              <strong>{passwordTargetUser.nome}</strong> fizer login com esta senha provisória, o sistema solicitará automaticamente que ele(a) crie uma senha pessoal definitiva.
             </div>
 
             {passwordModalError && (
@@ -527,20 +623,38 @@ export default function UsuariosAdminPage() {
               </div>
             )}
 
-            <form onSubmit={handleSaveQuickPassword} className="space-y-4">
+            <form onSubmit={handleSaveQuickPassword} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Nova Senha para o Usuário
+                  Nova Senha Provisória para {passwordTargetUser.nome}
                 </label>
                 <input
                   type="text"
                   required
                   value={quickNewPassword}
                   onChange={(e) => setQuickNewPassword(e.target.value)}
-                  placeholder="Digite a nova senha (mín. 6 caracteres)"
+                  placeholder="Digite a senha provisória (mín. 6 caracteres)"
                   className="w-full p-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500 font-mono"
                 />
               </div>
+
+              {isTargetAdminRole(passwordTargetUser.role) &&
+                passwordTargetUser.id !== currentUser?.id && (
+                  <div className="pt-2 border-t border-slate-200">
+                    <label className="block text-xs font-bold text-rose-800 uppercase tracking-wider mb-1 flex items-center space-x-1">
+                      <Lock className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Confirme a SUA Senha de Super Admin</span>
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      value={myAdminCurrentPassword}
+                      onChange={(e) => setMyAdminCurrentPassword(e.target.value)}
+                      placeholder="Digite sua própria senha atual para autorizar"
+                      className="w-full p-2.5 text-xs bg-rose-50/40 border border-rose-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+                )}
 
               <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
                 <button
@@ -555,7 +669,7 @@ export default function UsuariosAdminPage() {
                   disabled={savingPassword}
                   className="py-2 px-4 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow transition-all disabled:opacity-60"
                 >
-                  {savingPassword ? 'Salvando...' : 'Salvar Nova Senha'}
+                  {savingPassword ? 'Salvando...' : 'Confirmar Senha Provisória'}
                 </button>
               </div>
             </form>
@@ -570,7 +684,9 @@ export default function UsuariosAdminPage() {
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">
-                  {selectedUser.status === 'PENDENTE' ? 'Aprovar Cadastro' : 'Editar Permissões e Senha'}
+                  {selectedUser.status === 'PENDENTE'
+                    ? 'Aprovar Cadastro'
+                    : 'Editar Permissões e Nível de Acesso'}
                 </h3>
                 <p className="text-xs text-slate-500">
                   {selectedUser.nome} ({selectedUser.email})
@@ -596,7 +712,7 @@ export default function UsuariosAdminPage() {
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                   1. Perfil de Acesso:
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className={`grid gap-2 ${isCurrentSuperAdmin ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2'}`}>
                   <button
                     type="button"
                     onClick={() => {
@@ -607,7 +723,7 @@ export default function UsuariosAdminPage() {
                     }}
                     className={`p-2.5 rounded-xl border text-left transition-all ${
                       targetRole === 'ESTAGIARIO_PADRAO'
-                        ? 'border-amber-600 bg-amber-50 text-amber-900 ring-2 ring-amber-400'
+                        ? 'border-emerald-600 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-400'
                         : 'border-slate-200 hover:bg-slate-50 text-slate-700'
                     }`}
                   >
@@ -628,23 +744,40 @@ export default function UsuariosAdminPage() {
                     <span className="text-[10px] text-slate-500">Múltiplas lojas</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setTargetRole('ADMIN')}
-                    className={`p-2.5 rounded-xl border text-left transition-all ${
-                      targetRole === 'ADMIN'
-                        ? 'border-purple-600 bg-purple-50 text-purple-900 ring-2 ring-purple-400'
-                        : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-                    }`}
-                  >
-                    <strong className="block text-xs">Admin</strong>
-                    <span className="text-[10px] text-slate-500">Nutrição global</span>
-                  </button>
+                  {isCurrentSuperAdmin && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setTargetRole('ADMIN')}
+                        className={`p-2.5 rounded-xl border text-left transition-all ${
+                          targetRole === 'ADMIN'
+                            ? 'border-purple-600 bg-purple-50 text-purple-900 ring-2 ring-purple-400'
+                            : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        <strong className="block text-xs">👑 Admin</strong>
+                        <span className="text-[10px] text-slate-500">Equipe Nutrição</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setTargetRole('SUPER_ADMIN')}
+                        className={`p-2.5 rounded-xl border text-left transition-all ${
+                          targetRole === 'SUPER_ADMIN'
+                            ? 'border-amber-600 bg-amber-50 text-amber-900 ring-2 ring-amber-400'
+                            : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        <strong className="block text-xs">🛡️ Super Admin</strong>
+                        <span className="text-[10px] text-slate-500">Gestão Total</span>
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
               {/* Store Selector */}
-              {targetRole !== 'ADMIN' && (
+              {!isTargetAdminRole(targetRole) && (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
@@ -693,18 +826,38 @@ export default function UsuariosAdminPage() {
               )}
 
               {/* Optional Password Reset inside Edit Modal */}
-              <div className="pt-2 border-t border-slate-100">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  3. Redefinir Senha do Usuário (Opcional)
-                </label>
-                <input
-                  type="text"
-                  value={adminNewPassword}
-                  onChange={(e) => setAdminNewPassword(e.target.value)}
-                  placeholder="Deixe em branco para manter a senha atual"
-                  className="w-full p-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500 font-mono"
-                />
-              </div>
+              {selectedUser.id !== currentUser?.id && (
+                <div className="pt-2 border-t border-slate-100 space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      3. Definir Senha Provisória (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={adminNewPassword}
+                      onChange={(e) => setAdminNewPassword(e.target.value)}
+                      placeholder="Deixe em branco para manter a senha atual"
+                      className="w-full p-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500 font-mono"
+                    />
+                  </div>
+
+                  {adminNewPassword && isTargetAdminRole(selectedUser.role) && (
+                    <div>
+                      <label className="block text-xs font-bold text-rose-800 uppercase tracking-wider mb-1">
+                        Confirme a SUA Senha de Super Admin
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        value={editModalMyPassword}
+                        onChange={(e) => setEditModalMyPassword(e.target.value)}
+                        placeholder="Sua senha atual de Super Admin"
+                        className="w-full p-2.5 text-xs bg-rose-50/40 border border-rose-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                 {selectedUser.id !== currentUser?.id ? (

@@ -55,17 +55,18 @@ async function main() {
       const email = row[1]?.trim().toLowerCase();
       if (email && email.includes('@')) {
         const nome = email.split('@')[0].replace(/[._]/g, ' ').toUpperCase();
+        const role = email === 'danielelopesraya@gmail.com' ? 'SUPER_ADMIN' : 'ADMIN';
         await prisma.user.upsert({
           where: { email },
           update: {
-            role: 'ADMIN',
+            role,
             status: 'APROVADO',
           },
           create: {
             nome,
             email,
             passwordHash: defaultPasswordHash,
-            role: 'ADMIN',
+            role,
             status: 'APROVADO',
             dataAprovacao: new Date(),
           },

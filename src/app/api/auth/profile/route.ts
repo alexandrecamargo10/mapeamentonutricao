@@ -42,7 +42,6 @@ export async function PATCH(request: Request) {
         dataToUpdate.avatarUrl = null;
       } else {
         const avatarStr = String(avatarUrl);
-        // Aceita Data URL de imagem compacta (até ~300KB) ou URL https
         if (avatarStr.length > 350000) {
           return NextResponse.json(
             { error: 'A imagem selecionada é muito grande. Tente uma imagem menor.' },
@@ -65,19 +64,31 @@ export async function PATCH(request: Request) {
 
     // Alteração de senha pelo próprio usuário
     if (newPassword) {
-      if (!currentPassword) {
-        return NextResponse.json(
-          { error: 'Informe sua senha atual para poder definir uma nova senha.' },
-          { status: 400 }
-        );
-      }
+      // Se o usuário NÃO está no fluxo de senha provisória obrigatória, exige a senha atual
+      if (!user.mustChangePassword) {
+        if (!currentPassword) {
+          return NextResponse.json(
+            { error: 'Informe sua senha atual para poder definir uma nova senha.' },
+            { status: 400 }
+          );
+        }
 
-      const validCurrent = await verifyPassword(String(currentPassword), user.passwordHash);
-      if (!validCurrent) {
-        return NextResponse.json(
-          { error: 'A senha atual informada está incorreta.' },
-          { status: 401 }
-        );
+        const validCurrent = await verifyPassword(String(currentPassword), user.passwordHash);
+        if (!validCurrent) {
+          return NextResponse.json(
+            { error: 'A senha atual informada está incorreta.' },
+            { status: 401 }
+          );
+        }
+      } else if (currentPassword) {
+        // Caso tenha informado no fluxo provisório, garante que não digitou a mesma senha provisória
+        const sameAsOld = await verifyPassword(String(newPassword), user.passwordHash);
+        if (sameAsOld) {
+          return NextResponse.json(
+            { error: 'Sua nova senha pessoal deve ser diferente da senha provisória.' },
+            { status: 400 }
+          );
+        }
       }
 
       if (String(newPassword).length < 6 || String(newPassword).length > 128) {
@@ -88,6 +99,7 @@ export async function PATCH(request: Request) {
       }
 
       dataToUpdate.passwordHash = await hashPassword(String(newPassword));
+      dataToUpdate.mustChangePassword = false; // Libera a flag de senha provisória
     }
 
     const updated = await prisma.user.update({
@@ -101,6 +113,7 @@ export async function PATCH(request: Request) {
         avatarUrl: true,
         role: true,
         status: true,
+        mustChangePassword: true,
       },
     });
 

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { verifyPassword, signSessionToken, AUTH_COOKIE_NAME } from '@/lib/auth';
+import { verifyPassword, signSessionToken, AUTH_COOKIE_NAME, isAdminRole } from '@/lib/auth';
 
 // Proteção contra ataques de Força Bruta (Rate Limiting por IP/Email)
 const loginAttempts = new Map<string, { count: number; lockUntil: number }>();
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       nome: us.store.nome,
     }));
 
-    if (user.role === 'ADMIN') {
+    if (isAdminRole(user.role)) {
       storeObjects = await prisma.store.findMany({
         where: { ativo: true },
         select: { id: true, nome: true },
@@ -120,6 +120,7 @@ export async function POST(request: Request) {
         avatarUrl: user.avatarUrl || null,
         role: user.role,
         status: user.status,
+        mustChangePassword: Boolean(user.mustChangePassword),
         stores: storeObjects,
       },
     });

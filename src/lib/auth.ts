@@ -6,16 +6,27 @@ import { prisma } from './prisma';
 const JWT_SECRET = process.env.JWT_SECRET || 'casas-pedro-secret-key-default-2026';
 export const AUTH_COOKIE_NAME = 'cp_validades_session';
 
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'ESTAGIARIO_PADRAO' | 'ESTAGIARIO_360';
+
 export interface SessionPayload {
   userId: string;
   email: string;
   nome: string;
   telefone?: string | null;
   avatarUrl?: string | null;
-  role: 'ADMIN' | 'ESTAGIARIO_PADRAO' | 'ESTAGIARIO_360';
+  role: UserRole;
   status: 'PENDENTE' | 'APROVADO' | 'REJEITADO' | 'INATIVO';
+  mustChangePassword?: boolean;
   stores: string[]; // Lista de IDs de lojas autorizadas em tempo real
   storeObjects?: { id: string; nome: string }[];
+}
+
+export function isAdminRole(role?: string | null): boolean {
+  return role === 'ADMIN' || role === 'SUPER_ADMIN';
+}
+
+export function isSuperAdminRole(role?: string | null): boolean {
+  return role === 'SUPER_ADMIN';
 }
 
 // Micro-cache em memória no servidor (TTL de 3 segundos) para evitar consultas repetidas
@@ -93,6 +104,7 @@ export async function getSession(): Promise<SessionPayload | null> {
       avatarUrl: true,
       role: true,
       status: true,
+      mustChangePassword: true,
       userStores: {
         where: { store: { ativo: true } },
         select: {
@@ -114,8 +126,9 @@ export async function getSession(): Promise<SessionPayload | null> {
     nome: dbUser.nome,
     telefone: dbUser.telefone,
     avatarUrl: dbUser.avatarUrl,
-    role: dbUser.role as SessionPayload['role'],
+    role: dbUser.role as UserRole,
     status: dbUser.status as SessionPayload['status'],
+    mustChangePassword: dbUser.mustChangePassword,
     stores: dbUser.userStores.map((us) => us.storeId),
     storeObjects: dbUser.userStores.map((us) => ({
       id: us.store.id,
@@ -133,7 +146,7 @@ export async function getSession(): Promise<SessionPayload | null> {
 
 export function canAccessStore(session: SessionPayload, storeId: string): boolean {
   if (session.status !== 'APROVADO') return false;
-  if (session.role === 'ADMIN') return true;
+  if (isAdminRole(session.role)) return true;
   return session.stores.includes(storeId);
 }
 
@@ -146,7 +159,7 @@ export function buildStoreRLSFilter(session: SessionPayload, requestedStoreId?: 
     throw new Error('FORBIDDEN_UNAPPROVED');
   }
 
-  if (session.role === 'ADMIN') {
+  if (isAdminRole(session.role)) {
     if (requestedStoreId && requestedStoreId !== 'TODAS') {
       return { storeId: requestedStoreId };
     }
