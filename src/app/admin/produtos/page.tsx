@@ -3,9 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
-import { Package, Plus, Search, Upload, Edit2, Filter, Download } from 'lucide-react';
+import { Plus, Search, Upload, Edit2, FileSpreadsheet, FileText } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getCachedClientUser, fetchClientUser } from '@/lib/client-auth';
+import { exportToExcelFile, exportToPdfReport } from '@/lib/export-utils';
 
 export default function ProdutosAdminPage() {
   const router = useRouter();
@@ -18,6 +19,7 @@ export default function ProdutosAdminPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('TODAS');
+  const [exporting, setExporting] = useState(false);
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -68,6 +70,59 @@ export default function ProdutosAdminPage() {
   useEffect(() => {
     loadData();
   }, [page, search, selectedCategory, router]);
+
+  const fetchAllFilteredProducts = async () => {
+    const url = `/api/admin/products?page=1&limit=5000&q=${encodeURIComponent(
+      search
+    )}&categoria=${encodeURIComponent(selectedCategory)}`;
+    const res = await fetch(url);
+    if (!res.ok) return products;
+    const data = await res.json();
+    return data.products || products;
+  };
+
+  const handleExportProdutosExcel = async () => {
+    setExporting(true);
+    try {
+      const allProds = await fetchAllFilteredProducts();
+      const rows = allProds.map((p: any) => ({
+        SKU: p.sku,
+        Item: p.item,
+        Categoria: p.categoria,
+        Status: p.ativo ? 'Ativo' : 'Inativo',
+      }));
+      exportToExcelFile(rows, 'Catalogo_Produtos', 'Catalogo_Produtos_CasasPedro');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportProdutosPdf = async () => {
+    setExporting(true);
+    try {
+      const allProds = await fetchAllFilteredProducts();
+      const rows = allProds.map((p: any) => ({
+        sku: p.sku,
+        item: p.item,
+        categoria: p.categoria,
+      }));
+      exportToPdfReport({
+        title: 'Catálogo Oficial de Produtos (SKUs)',
+        subtitle:
+          selectedCategory === 'TODAS'
+            ? 'Todas as Categorias – Casas Pedro'
+            : `Categoria: ${selectedCategory} – Casas Pedro`,
+        columns: [
+          { header: 'SKU', key: 'sku' },
+          { header: 'Descrição do Produto', key: 'item' },
+          { header: 'Categoria', key: 'categoria' },
+        ],
+        rows,
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const openNewModal = () => {
     setIsEditing(false);
@@ -132,11 +187,13 @@ export default function ProdutosAdminPage() {
         const rawJson: any[] = XLSX.utils.sheet_to_json(ws);
 
         // Map columns (handling variations like SKU, sku, Item, item, Produto, Categoria)
-        const itemsToUpload = rawJson.map((row) => ({
-          sku: String(row.SKU || row.sku || row.Codigo || ''),
-          item: String(row.Item || row.item || row.Produto || row.Descricao || ''),
-          categoria: String(row.Categoria || row.categoria || 'Geral'),
-        })).filter((r) => r.sku && r.item);
+        const itemsToUpload = rawJson
+          .map((row) => ({
+            sku: String(row.SKU || row.sku || row.Codigo || ''),
+            item: String(row.Item || row.item || row.Produto || row.Descricao || ''),
+            categoria: String(row.Categoria || row.categoria || 'Geral'),
+          }))
+          .filter((r) => r.sku && r.item);
 
         if (itemsToUpload.length === 0) {
           setBatchMessage('Nenhum produto válido encontrado. A planilha deve conter as colunas: SKU, Item, Categoria.');
@@ -179,7 +236,7 @@ export default function ProdutosAdminPage() {
       <Navbar user={currentUser} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
               Catálogo de Produtos ({total} itens)
@@ -189,7 +246,27 @@ export default function ProdutosAdminPage() {
             </p>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleExportProdutosExcel}
+              disabled={exporting}
+              className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center space-x-1.5 disabled:opacity-60"
+              title="Exportar catálogo de produtos para planilha Excel (.xlsx)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>{exporting ? 'Gerando...' : 'Exportar Excel'}</span>
+            </button>
+
+            <button
+              onClick={handleExportProdutosPdf}
+              disabled={exporting}
+              className="py-2 px-3 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center space-x-1.5 disabled:opacity-60"
+              title="Gerar arquivo PDF com o catálogo de produtos"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Exportar PDF</span>
+            </button>
+
             <button
               onClick={() => {
                 setBatchMessage('');

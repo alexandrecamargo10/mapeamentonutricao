@@ -16,8 +16,8 @@ import {
   UserCheck,
   UserX,
   Search,
+  Trash2,
 } from 'lucide-react';
-import { formatarDataBr } from '@/lib/utils';
 
 export default function UsuariosAdminPage() {
   const router = useRouter();
@@ -72,7 +72,7 @@ export default function UsuariosAdminPage() {
   }, [router]);
 
   const pendingUsers = users.filter((u) => u.status === 'PENDENTE');
-  const activeUsers = users.filter((u) => u.status === 'APROVADO' || u.status === 'INATIVO');
+  const activeUsers = users.filter((u) => u.status !== 'PENDENTE');
 
   const filteredUsers = (activeTab === 'pendentes' ? pendingUsers : activeUsers).filter(
     (u) =>
@@ -102,6 +102,38 @@ export default function UsuariosAdminPage() {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleDeleteUser = async (u: any) => {
+    if (u.id === currentUser?.id) {
+      alert('Você não pode excluir sua própria conta de administrador.');
+      return;
+    }
+    if (
+      !confirm(
+        `ATENÇÃO: Deseja realmente excluir permanentemente o usuário "${u.nome}" (${u.email}) do sistema?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: u.id, action: 'EXCLUIR' }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Erro ao excluir usuário.');
+        return;
+      }
+      if (approvalModalOpen) setApprovalModalOpen(false);
+      loadData();
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao tentar excluir o usuário.');
     }
   };
 
@@ -187,7 +219,7 @@ export default function UsuariosAdminPage() {
               Gestão de Usuários & Estagiários
             </h1>
             <p className="text-xs text-slate-500 font-medium">
-              Controle de acesso, aprovação de cadastros e vinculação de lojas
+              Controle de acesso, aprovação de cadastros, vinculação de lojas e exclusão de contas
             </p>
           </div>
 
@@ -256,6 +288,7 @@ export default function UsuariosAdminPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredUsers.map((u) => {
               const userStores = u.userStores || [];
+              const isSelf = u.id === currentUser?.id;
               return (
                 <div
                   key={u.id}
@@ -273,7 +306,7 @@ export default function UsuariosAdminPage() {
                             ? 'bg-amber-100 text-amber-800 border-amber-300'
                             : u.status === 'APROVADO'
                             ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                            : 'bg-slate-100 text-slate-700 border-slate-300'
+                            : 'bg-rose-100 text-rose-700 border-rose-300'
                         }`}
                       >
                         {u.status}
@@ -320,32 +353,47 @@ export default function UsuariosAdminPage() {
                   </div>
 
                   {/* Action buttons */}
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
-                    {u.status === 'PENDENTE' ? (
-                      <>
-                        <button
-                          onClick={() => handleReject(u.id)}
-                          className="py-2 px-3 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
-                        >
-                          Rejeitar
-                        </button>
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    {!isSelf ? (
+                      <button
+                        onClick={() => handleDeleteUser(u)}
+                        title="Excluir usuário permanentemente"
+                        className="py-2 px-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-xl transition-colors flex items-center space-x-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Excluir</span>
+                      </button>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 italic px-2">Sua conta atual</span>
+                    )}
+
+                    <div className="flex items-center space-x-2">
+                      {u.status === 'PENDENTE' ? (
+                        <>
+                          <button
+                            onClick={() => handleReject(u.id)}
+                            className="py-2 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                          >
+                            Rejeitar
+                          </button>
+                          <button
+                            onClick={() => openApproveModal(u)}
+                            className="py-2 px-3.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow transition-colors flex items-center space-x-1"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Aprovar</span>
+                          </button>
+                        </>
+                      ) : (
                         <button
                           onClick={() => openApproveModal(u)}
-                          className="py-2 px-4 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow transition-colors flex items-center space-x-1"
+                          className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors flex items-center space-x-1.5"
                         >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Aprovar Cadastro</span>
+                          <Edit2 className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Editar Lojas / Perfil</span>
                         </button>
-                      </>
-                    ) : (
-                      <button
-                        onClick={() => openApproveModal(u)}
-                        className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors flex items-center space-x-1.5"
-                      >
-                        <Edit2 className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Editar Lojas / Perfil</span>
-                      </button>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -483,21 +531,36 @@ export default function UsuariosAdminPage() {
                 </div>
               )}
 
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setApprovalModalOpen(false)}
-                  className="py-2.5 px-4 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingApproval}
-                  className="py-2.5 px-5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md transition-all disabled:opacity-60"
-                >
-                  {savingApproval ? 'Salvando...' : 'Confirmar e Liberar Acesso'}
-                </button>
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                {selectedUser.id !== currentUser?.id ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteUser(selectedUser)}
+                    className="py-2.5 px-3 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl flex items-center space-x-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Excluir Usuário</span>
+                  </button>
+                ) : (
+                  <div />
+                )}
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setApprovalModalOpen(false)}
+                    className="py-2.5 px-4 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingApproval}
+                    className="py-2.5 px-5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md transition-all disabled:opacity-60"
+                  >
+                    {savingApproval ? 'Salvando...' : 'Confirmar e Liberar Acesso'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
-import { Store, Plus, Search, Edit2, CheckCircle2, XCircle } from 'lucide-react';
+import { Store, Plus, Search, Edit2, FileSpreadsheet, FileText } from 'lucide-react';
 import { getCachedClientUser, fetchClientUser } from '@/lib/client-auth';
+import { exportToExcelFile, exportToPdfReport } from '@/lib/export-utils';
 
 export default function LojasAdminPage() {
   const router = useRouter();
@@ -55,6 +56,36 @@ export default function LojasAdminPage() {
       s.id.toLowerCase().includes(search.toLowerCase()) ||
       s.nome.toLowerCase().includes(search.toLowerCase())
   );
+
+  const handleExportLojasExcel = () => {
+    const rows = filteredStores.map((s) => ({
+      'Código (ID)': s.id,
+      'Nome da Loja': s.nome,
+      Status: s.ativo ? 'Ativa' : 'Inativa',
+      'Itens em Monitoramento': s.itensMonitorados,
+    }));
+    exportToExcelFile(rows, 'Lojas_CasasPedro', 'Lojas_CasasPedro');
+  };
+
+  const handleExportLojasPdf = () => {
+    const rows = filteredStores.map((s) => ({
+      id: s.id,
+      nome: s.nome,
+      status: s.ativo ? 'Ativa' : 'Inativa',
+      itensMonitorados: `${s.itensMonitorados} lote(s)`,
+    }));
+    exportToPdfReport({
+      title: 'Relatório Oficial de Lojas Cadastradas',
+      subtitle: 'Mapeamento da Rede Casas Pedro – Nutrição Corporativa',
+      columns: [
+        { header: 'Código (ID)', key: 'id' },
+        { header: 'Nome da Loja', key: 'nome' },
+        { header: 'Status', key: 'status', align: 'center' },
+        { header: 'Itens Monitorados', key: 'itensMonitorados', align: 'center' },
+      ],
+      rows,
+    });
+  };
 
   const openNewModal = () => {
     setIsEditing(false);
@@ -119,18 +150,18 @@ export default function LojasAdminPage() {
       <Navbar user={currentUser} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-              Gestão de Lojas (Rede Casas Pedro)
+              Gestão de Lojas ({stores.length} unidades)
             </h1>
             <p className="text-xs text-slate-500 font-medium">
-              75 filiais ativas no mapeamento corporativo
+              Filiais ativas no mapeamento corporativo da Rede Casas Pedro
             </p>
           </div>
 
-          <div className="flex items-center space-x-3">
-            <div className="relative w-64">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-full sm:w-60">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
@@ -140,6 +171,24 @@ export default function LojasAdminPage() {
                 className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none"
               />
             </div>
+
+            <button
+              onClick={handleExportLojasExcel}
+              className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center space-x-1.5"
+              title="Exportar lista de lojas para planilha Excel (.xlsx)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Exportar Excel</span>
+            </button>
+
+            <button
+              onClick={handleExportLojasPdf}
+              className="py-2 px-3 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center space-x-1.5"
+              title="Gerar arquivo PDF com a relação de lojas"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Exportar PDF</span>
+            </button>
 
             <button
               onClick={openNewModal}

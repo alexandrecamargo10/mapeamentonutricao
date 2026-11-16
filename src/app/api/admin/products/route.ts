@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   const q = searchParams.get('q')?.trim() || '';
   const categoria = searchParams.get('categoria')?.trim() || '';
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
-  const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)));
+  const limit = Math.min(5000, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)));
 
   const whereClause: any = {};
   if (categoria && categoria !== 'TODAS') {

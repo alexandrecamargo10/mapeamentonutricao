@@ -1,0 +1,35 @@
+Dados para Implantação do Projeto: mapeamentonutricao
+
+1. Resumo da finalidade da aplicação e do processo de negócio que ela atende:
+	• Finalidade: Aplicação web responsiva (Desktop e Mobile) para gerenciamento, auditoria e controle de datas de validade de produtos nas 75 lojas da rede Casas Pedro, desenvolvida para a área de Nutrição Corporativa / Controle de Qualidade.
+	• Processo de Negócio:
+		1. Operação de Loja: Estagiários registram os lotes de produtos conferidos em loja (a partir de um catálogo pré-carregado de 1.115 SKUs), visualizam alertas cromáticos automáticos de vencimento (Vencido, Crítico ≤ 7 dias, Atenção ≤ 30 dias e Em Dia), emitem o Checklist A4 de conferência diária e dão baixa nos itens (Vendido, Descartado, Retirado para CD ou Doado).
+		2. Governança de Acesso (RBAC): Novos usuários realizam cadastro com e-mail e senha e ficam bloqueados no status PENDENTE até que um administrador da Nutrição aprove e vincule a loja. O perfil Estagiário Padrão acessa apenas 1 loja, enquanto o Estagiário 360 atua em múltiplas lojas designadas.
+		3. Gestão Corporativa: Dashboard executivo em tempo real para a Nutrição Corporativa com KPIs da rede, gráficos de lojas e categorias críticas, gestão de lojas/SKUs e exportação de relatórios em Excel (.xlsx) e .csv.
+
+2. Dockerfile funcional e Inicialização Automática:
+	• Na raiz do projeto já estão disponíveis os arquivos Dockerfile, .dockerignore e docker-compose.yml.
+	• Inicialização Automática: O container utiliza a instrução CMD ["node", "scripts/docker-start.js"]. Ao iniciar o container, ele automaticamente:    
+		1. Sincroniza o schema do banco de dados (npx prisma db push).
+		2. Verifica se o banco está vazio; no primeiro deploy, importa automaticamente as 75 lojas, os 1.115 SKUs e os 5 administradores iniciais.       
+		3. Inicia o servidor de produção Next.js na porta 3000.
+	• Persistência: Recomenda-se montar um volume persistente no diretório /app/data do container (conforme configurado no docker-compose.yml).
+
+3. Variáveis de Ambiente necessárias:
+	• NODE_ENV="production" (Modo de execução de produção)
+	• PORT="3000" (Porta interna na qual a aplicação responde)
+	• DATABASE_URL="file:/app/data/prod.db" (Caminho do banco SQLite no volume persistente /app/data, ou string de conexão PostgreSQL caso a TI prefira apontar para um SGBD externo)
+	• JWT_SECRET="<definir-string-secreta-forte>" (Chave para assinatura dos cookies de sessão JWT HttpOnly)
+
+4. Arquivos de Configuração:
+	• Dockerfile e docker-compose.yml: Definição da imagem, variáveis, volume e inicialização do container.
+	• prisma/schema.prisma: Schema relacional do banco de dados (Prisma ORM).
+	• package.json e next.config.mjs: Dependências e configurações de build do Next.js 15.
+	• .env.example: Modelo de variáveis de ambiente.
+
+5. Segredos, Chaves de API e Certificados:
+	• Segredos (Secrets): Apenas JWT_SECRET (pode ser gerada pela TI via openssl rand -base64 48 e injetada como variável de ambiente).
+	• Chaves de API externas: Nenhuma. A aplicação não consome APIs externas de terceiros.
+	• Certificados SSL/TLS: A aplicação escuta via HTTP na porta 3000 do container. O certificado HTTPS deve ser aplicado no Reverse Proxy / Ingress / Load Balancer da infraestrutura corporativa apontando para a porta 3000 do container.
+
+6. URL Desejada: mapeamentonutricao (https://mapeamentonutricao.casaspedro.com.br ou http://mapeamentonutricao na rede interna). 

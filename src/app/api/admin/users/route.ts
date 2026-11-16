@@ -63,12 +63,35 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Usuário não encontrado.' }, { status: 404 });
     }
 
-    // Proteção contra auto-bloqueio ou auto-rebaixamento de administrador
-    if (user.id === session.userId && (action === 'REJEITAR' || action === 'SUSPENDER' || (role && role !== 'ADMIN'))) {
+    // Proteção contra auto-bloqueio, auto-exclusão ou auto-rebaixamento de administrador
+    if (
+      user.id === session.userId &&
+      (action === 'REJEITAR' || action === 'SUSPENDER' || action === 'EXCLUIR' || (role && role !== 'ADMIN'))
+    ) {
       return NextResponse.json(
-        { error: 'Operação bloqueada: você não pode desativar ou remover o perfil de administrador da sua própria conta.' },
+        { error: 'Operação bloqueada: você não pode excluir, desativar ou remover o perfil de administrador da sua própria conta.' },
         { status: 400 }
       );
+    }
+
+    if (action === 'EXCLUIR') {
+      await prisma.auditLog.create({
+        data: {
+          acao: 'EXCLUSAO_USUARIO',
+          userId: session.userId,
+          detalhes: JSON.stringify({
+            alvoUserId: user.id,
+            nome: user.nome,
+            email: user.email,
+            role: user.role,
+          }),
+        },
+      });
+      await prisma.user.delete({
+        where: { id: user.id },
+      });
+      invalidateSessionCache(user.id);
+      return NextResponse.json({ success: true, message: 'Usuário excluído permanentemente com sucesso.' });
     }
 
     if (action === 'REJEITAR') {
