@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  mapeamentonutricao:
+    container_name: mapeamentonutricao
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=file:/app/data/prod.db
+      - JWT_SECRET=${JWT_SECRET:-casas-pedro-super-secret-key-2026-qualidade-token}
+    volumes:
+      - mapeamento_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  mapeamento_data:

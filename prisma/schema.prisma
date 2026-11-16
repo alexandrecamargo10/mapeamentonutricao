@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String      @id @default(cuid())
+  nome          String
+  email         String      @unique
+  passwordHash  String
+  role          String      @default("ESTAGIARIO_PADRAO") // "ADMIN", "ESTAGIARIO_PADRAO", "ESTAGIARIO_360"
+  status        String      @default("PENDENTE") // "PENDENTE", "APROVADO", "REJEITADO", "INATIVO"
+  aprovadoPor   String?
+  dataAprovacao DateTime?
+  userStores    UserStore[]
+  registrosCriados ValidityRecord[] @relation("RegistradoPor")
+  registrosBaixados ValidityRecord[] @relation("BaixadoPor")
+  auditLogs     AuditLog[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model Store {
+  id              String           @id // Código da loja ex: "101024"
+  nome            String           // ex: "ALCANTARA 1"
+  ativo           Boolean          @default(true)
+  userStores      UserStore[]
+  validityRecords ValidityRecord[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model UserStore {
+  userId    String
+  storeId   String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, storeId])
+}
+
+model Product {
+  sku             String           @id // ex: "24790"
+  item            String           // Descrição completa
+  categoria       String           // ex: "Chocolates", "Doceria"
+  ativo           Boolean          @default(true)
+  validityRecords ValidityRecord[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([categoria])
+}
+
+model ValidityRecord {
+  id              String    @id @default(cuid())
+  storeId         String
+  store           Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sku             String
+  product         Product   @relation(fields: [sku], references: [sku], onDelete: Cascade)
+  quantidade      Float
+  dataValidade    DateTime
+  status          String    @default("EM_MONITORAMENTO") // "EM_MONITORAMENTO", "VENDIDO", "DESCARTADO", "RETIRADO", "DOADO"
+  lote            String?
+  observacoes     String?
+  registradoPorId String?
+  registradoPor   User?     @relation("RegistradoPor", fields: [registradoPorId], references: [id], onDelete: SetNull)
+  baixadoPorId    String?
+  baixadoPor      User?     @relation("BaixadoPor", fields: [baixadoPorId], references: [id], onDelete: SetNull)
+  dataBaixa       DateTime?
+  motivoBaixa     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([storeId])
+  @@index([dataValidade])
+  @@index([status])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  acao      String
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  storeId   String?
+  detalhes  String?  // JSON string
+  createdAt DateTime @default(now())
+}
