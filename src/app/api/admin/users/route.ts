@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getSession } from '@/lib/auth';
+import { getSession, invalidateSessionCache } from '@/lib/auth';
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -76,6 +76,7 @@ export async function PATCH(request: Request) {
         where: { id: user.id },
         data: { status: 'REJEITADO' },
       });
+      invalidateSessionCache(user.id);
       await prisma.auditLog.create({
         data: {
           acao: 'REJEICAO_USUARIO',
@@ -91,6 +92,7 @@ export async function PATCH(request: Request) {
         where: { id: user.id },
         data: { status: 'INATIVO' },
       });
+      invalidateSessionCache(user.id);
       await prisma.auditLog.create({
         data: {
           acao: 'SUSPENSAO_USUARIO',
@@ -175,6 +177,8 @@ export async function PATCH(request: Request) {
 
         return u;
       });
+
+      invalidateSessionCache(user.id);
 
       return NextResponse.json({
         success: true,

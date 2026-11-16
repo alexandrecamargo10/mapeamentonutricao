@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import { getCachedClientUser, fetchClientUser } from '@/lib/client-auth';
 import {
   Users,
   Store,
@@ -34,32 +35,37 @@ import {
 
 export default function AdminDashboardPage() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(() => getCachedClientUser());
+  const [loading, setLoading] = useState<boolean>(() => !getCachedClientUser());
   const [data, setData] = useState<any>(null);
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     async function loadDashboard() {
       try {
-        const meRes = await fetch('/api/auth/me');
-        const meData = await meRes.json();
-        if (!meData.authenticated || meData.user.role !== 'ADMIN') {
-          router.push('/login');
+        // Dispara verificação de sessão, relatórios e contagem de pendentes EM PARALELO
+        const [meUser, repRes, uRes] = await Promise.all([
+          fetchClientUser(),
+          fetch('/api/admin/reports'),
+          fetch('/api/admin/users?status=PENDENTE'),
+        ]);
+
+        if (!meUser || meUser.role !== 'ADMIN') {
+          router.replace('/login');
           return;
         }
-        setUser(meData.user);
+        setUser(meUser);
 
-        // Fetch reports
-        const repRes = await fetch('/api/admin/reports');
-        const repData = await repRes.json();
-        setData(repData);
+        if (repRes.ok) {
+          const repData = await repRes.json();
+          setData(repData);
+        }
 
-        // Fetch pending users count
-        const uRes = await fetch('/api/admin/users?status=PENDENTE');
-        const uData = await uRes.json();
-        if (uData.users) {
-          setPendingCount(uData.users.length);
+        if (uRes.ok) {
+          const uData = await uRes.json();
+          if (uData.users) {
+            setPendingCount(uData.users.length);
+          }
         }
       } catch (err) {
         console.error(err);

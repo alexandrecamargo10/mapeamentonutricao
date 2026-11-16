@@ -4,12 +4,13 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import { Store, Plus, Search, Edit2, CheckCircle2, XCircle } from 'lucide-react';
+import { getCachedClientUser, fetchClientUser } from '@/lib/client-auth';
 
 export default function LojasAdminPage() {
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<any>(() => getCachedClientUser());
   const [stores, setStores] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => !getCachedClientUser());
   const [search, setSearch] = useState('');
 
   // Modal State
@@ -23,17 +24,21 @@ export default function LojasAdminPage() {
 
   const loadData = async () => {
     try {
-      const meRes = await fetch('/api/auth/me');
-      const meData = await meRes.json();
-      if (!meData.authenticated || meData.user.role !== 'ADMIN') {
-        router.push('/login');
+      const [meUser, res] = await Promise.all([
+        fetchClientUser(),
+        fetch('/api/admin/stores'),
+      ]);
+
+      if (!meUser || meUser.role !== 'ADMIN') {
+        router.replace('/login');
         return;
       }
-      setCurrentUser(meData.user);
+      setCurrentUser(meUser);
 
-      const res = await fetch('/api/admin/stores');
-      const data = await res.json();
-      if (data.stores) setStores(data.stores);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.stores) setStores(data.stores);
+      }
     } catch (err) {
       console.error(err);
     } finally {

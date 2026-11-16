@@ -25,11 +25,12 @@ import {
   HeartHandshake,
 } from 'lucide-react';
 import { formatarDataBr, getFaixaBadgeInfo, type FaixaAlerta } from '@/lib/utils';
+import { getCachedClientUser, fetchClientUser } from '@/lib/client-auth';
 
 export default function LojaPage() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(() => getCachedClientUser());
+  const [loading, setLoading] = useState<boolean>(() => !getCachedClientUser());
 
   // Store state
   const [currentStoreId, setCurrentStoreId] = useState<string>('');
@@ -74,25 +75,16 @@ export default function LojaPage() {
   useEffect(() => {
     async function loadUser() {
       try {
-        const res = await fetch('/api/auth/me');
-        const data = await res.json();
-        if (!data.authenticated) {
-          router.push('/login');
+        const meUser = await fetchClientUser();
+        if (!meUser) {
+          router.replace('/login');
           return;
         }
-        setUser(data.user);
+        setUser(meUser);
 
-        if (data.user.stores && data.user.stores.length > 0) {
-          setCurrentStoreId(data.user.stores[0].id);
-          setCurrentStoreNome(data.user.stores[0].nome);
-        } else if (data.user.role === 'ADMIN') {
-          // Admin can load default store
-          const sRes = await fetch('/api/admin/stores');
-          const sData = await sRes.json();
-          if (sData.stores && sData.stores.length > 0) {
-            setCurrentStoreId(sData.stores[0].id);
-            setCurrentStoreNome(sData.stores[0].nome);
-          }
+        if (meUser.stores && meUser.stores.length > 0) {
+          setCurrentStoreId(meUser.stores[0].id);
+          setCurrentStoreNome(meUser.stores[0].nome);
         }
       } catch (err) {
         console.error(err);

@@ -16,11 +16,12 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { formatarDataBr, getFaixaBadgeInfo, type FaixaAlerta } from '@/lib/utils';
+import { getCachedClientUser, fetchClientUser } from '@/lib/client-auth';
 
 export default function RelatoriosAdminPage() {
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(() => getCachedClientUser());
+  const [loading, setLoading] = useState<boolean>(() => !getCachedClientUser());
 
   const [stores, setStores] = useState<any[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<string>('TODAS');
@@ -34,17 +35,21 @@ export default function RelatoriosAdminPage() {
   useEffect(() => {
     async function loadInit() {
       try {
-        const meRes = await fetch('/api/auth/me');
-        const meData = await meRes.json();
-        if (!meData.authenticated || meData.user.role !== 'ADMIN') {
-          router.push('/login');
+        const [meUser, sRes] = await Promise.all([
+          fetchClientUser(),
+          fetch('/api/admin/stores'),
+        ]);
+
+        if (!meUser || meUser.role !== 'ADMIN') {
+          router.replace('/login');
           return;
         }
-        setCurrentUser(meData.user);
+        setCurrentUser(meUser);
 
-        const sRes = await fetch('/api/admin/stores');
-        const sData = await sRes.json();
-        if (sData.stores) setStores(sData.stores);
+        if (sRes.ok) {
+          const sData = await sRes.json();
+          if (sData.stores) setStores(sData.stores);
+        }
       } catch (err) {
         console.error(err);
       } finally {

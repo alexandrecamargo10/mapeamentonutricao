@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import { Package, Plus, Search, Upload, Edit2, Filter, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { getCachedClientUser, fetchClientUser } from '@/lib/client-auth';
 
 export default function ProdutosAdminPage() {
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(() => getCachedClientUser());
+  const [loading, setLoading] = useState<boolean>(() => !getCachedClientUser());
 
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -34,23 +35,28 @@ export default function ProdutosAdminPage() {
 
   const loadData = async () => {
     try {
-      const meRes = await fetch('/api/auth/me');
-      const meData = await meRes.json();
-      if (!meData.authenticated || meData.user.role !== 'ADMIN') {
-        router.push('/login');
-        return;
-      }
-      setCurrentUser(meData.user);
-
       const url = `/api/admin/products?page=${page}&limit=50&q=${encodeURIComponent(
         search
       )}&categoria=${encodeURIComponent(selectedCategory)}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.products) {
-        setProducts(data.products);
-        setTotal(data.total);
-        setCategories(data.categories || []);
+
+      const [meUser, res] = await Promise.all([
+        fetchClientUser(),
+        fetch(url),
+      ]);
+
+      if (!meUser || meUser.role !== 'ADMIN') {
+        router.replace('/login');
+        return;
+      }
+      setCurrentUser(meUser);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.products) {
+          setProducts(data.products);
+          setTotal(data.total);
+          setCategories(data.categories || []);
+        }
       }
     } catch (err) {
       console.error(err);

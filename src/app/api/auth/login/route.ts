@@ -38,7 +38,10 @@ export async function POST(request: Request) {
       include: {
         userStores: {
           where: { store: { ativo: true } },
-          select: { storeId: true },
+          select: {
+            storeId: true,
+            store: { select: { id: true, nome: true } },
+          },
         },
       },
     });
@@ -85,6 +88,18 @@ export async function POST(request: Request) {
     }
 
     const storeIds = user.userStores.map((us) => us.storeId);
+    let storeObjects = user.userStores.map((us) => ({
+      id: us.store.id,
+      nome: us.store.nome,
+    }));
+
+    if (user.role === 'ADMIN') {
+      storeObjects = await prisma.store.findMany({
+        where: { ativo: true },
+        select: { id: true, nome: true },
+        orderBy: { nome: 'asc' },
+      });
+    }
 
     const token = signSessionToken({
       userId: user.id,
@@ -103,7 +118,7 @@ export async function POST(request: Request) {
         email: user.email,
         role: user.role,
         status: user.status,
-        stores: storeIds,
+        stores: storeObjects,
       },
     });
 

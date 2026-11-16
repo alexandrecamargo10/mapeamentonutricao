@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import { getCachedClientUser, fetchClientUser } from '@/lib/client-auth';
 import {
   Users,
   CheckCircle2,
@@ -20,8 +21,8 @@ import { formatarDataBr } from '@/lib/utils';
 
 export default function UsuariosAdminPage() {
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(() => getCachedClientUser());
+  const [loading, setLoading] = useState<boolean>(() => !getCachedClientUser());
 
   const [activeTab, setActiveTab] = useState<'pendentes' | 'ativos'>('pendentes');
   const [users, setUsers] = useState<any[]>([]);
@@ -38,23 +39,27 @@ export default function UsuariosAdminPage() {
 
   const loadData = async () => {
     try {
-      const meRes = await fetch('/api/auth/me');
-      const meData = await meRes.json();
-      if (!meData.authenticated || meData.user.role !== 'ADMIN') {
-        router.push('/login');
+      const [meUser, sRes, uRes] = await Promise.all([
+        fetchClientUser(),
+        fetch('/api/admin/stores'),
+        fetch('/api/admin/users'),
+      ]);
+
+      if (!meUser || meUser.role !== 'ADMIN') {
+        router.replace('/login');
         return;
       }
-      setCurrentUser(meData.user);
+      setCurrentUser(meUser);
 
-      // Load all stores
-      const sRes = await fetch('/api/admin/stores');
-      const sData = await sRes.json();
-      if (sData.stores) setStores(sData.stores);
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        if (sData.stores) setStores(sData.stores);
+      }
 
-      // Load users
-      const uRes = await fetch('/api/admin/users');
-      const uData = await uRes.json();
-      if (uData.users) setUsers(uData.users);
+      if (uRes.ok) {
+        const uData = await uRes.json();
+        if (uData.users) setUsers(uData.users);
+      }
     } catch (err) {
       console.error(err);
     } finally {

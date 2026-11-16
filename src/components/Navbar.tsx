@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
+import { clearCachedClientUser } from '@/lib/client-auth';
 import {
   Shield,
   Store,
@@ -41,9 +42,9 @@ export default function Navbar({
 
   const handleLogout = async () => {
     try {
+      clearCachedClientUser();
       await fetch('/api/auth/logout', { method: 'POST' });
-      router.push('/login');
-      router.refresh();
+      router.replace('/login');
     } catch (err) {
       console.error(err);
     }

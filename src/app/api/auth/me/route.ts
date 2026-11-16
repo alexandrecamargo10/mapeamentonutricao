@@ -2,51 +2,45 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
+let cachedAllActiveStores: { data: { id: string; nome: string }[]; expiresAt: number } | null = null;
+
 export async function GET() {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
 
-  // Fetch full details from database to keep permissions fresh
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    include: {
-      userStores: {
-        include: {
-          store: true,
-        },
-      },
-    },
-  });
-
-  if (!user || user.status !== 'APROVADO') {
-    return NextResponse.json({ authenticated: false, status: user?.status }, { status: 403 });
+  if (session.status !== 'APROVADO') {
+    return NextResponse.json({ authenticated: false, status: session.status }, { status: 403 });
   }
 
-  // If admin, they can access all stores
   let authorizedStores: { id: string; nome: string }[] = [];
-  if (user.role === 'ADMIN') {
-    authorizedStores = await prisma.store.findMany({
-      where: { ativo: true },
-      select: { id: true, nome: true },
-      orderBy: { nome: 'asc' },
-    });
+  if (session.role === 'ADMIN') {
+    if (cachedAllActiveStores && cachedAllActiveStores.expiresAt > Date.now()) {
+      authorizedStores = cachedAllActiveStores.data;
+    } else {
+      authorizedStores = await prisma.store.findMany({
+        where: { ativo: true },
+        select: { id: true, nome: true },
+        orderBy: { nome: 'asc' },
+      });
+      cachedAllActiveStores = {
+        data: authorizedStores,
+        expiresAt: Date.now() + 15000, // 15s cache para lista estática de lojas
+      };
+    }
   } else {
-    authorizedStores = user.userStores.map((us) => ({
-      id: us.store.id,
-      nome: us.store.nome,
-    }));
+    authorizedStores = session.storeObjects || [];
   }
 
   return NextResponse.json({
     authenticated: true,
     user: {
-      id: user.id,
-      nome: user.nome,
-      email: user.email,
-      role: user.role,
-      status: user.status,
+      id: session.userId,
+      nome: session.nome,
+      email: session.email,
+      role: session.role,
+      status: session.status,
       stores: authorizedStores,
     },
   });

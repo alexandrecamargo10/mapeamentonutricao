@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ShieldCheck, UserCheck, Lock, Mail, User, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
+import { setCachedClientUser } from '@/lib/client-auth';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -46,13 +47,13 @@ export default function LoginPage() {
         return;
       }
 
-      // Success
+      // Success: armazena perfil de UI em memória para abertura instantânea da próxima tela
+      setCachedClientUser(data.user);
       if (data.user.role === 'ADMIN') {
         router.push('/admin');
       } else {
         router.push('/loja');
       }
-      router.refresh();
     } catch (err: any) {
       setLoginError('Erro de conexão ao servidor.');
     } finally {

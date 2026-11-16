@@ -13,10 +13,24 @@ export interface SessionPayload {
   role: 'ADMIN' | 'ESTAGIARIO_PADRAO' | 'ESTAGIARIO_360';
   status: 'PENDENTE' | 'APROVADO' | 'REJEITADO' | 'INATIVO';
   stores: string[]; // Lista de IDs de lojas autorizadas em tempo real
+  storeObjects?: { id: string; nome: string }[];
+}
+
+// Micro-cache em memória no servidor (TTL de 3 segundos) para evitar consultas repetidas
+// em requisições paralelas (Promise.all), com invalidação imediata em qualquer alteração de permissão.
+const sessionCache = new Map<string, { data: SessionPayload; expiresAt: number }>();
+const SESSION_CACHE_TTL_MS = 3000;
+
+export function invalidateSessionCache(userId?: string) {
+  if (userId) {
+    sessionCache.delete(userId);
+  } else {
+    sessionCache.clear();
+  }
 }
 
 export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 12);
+  return bcrypt.hash(password, 10);
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
@@ -24,10 +38,21 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 export function signSessionToken(payload: SessionPayload): string {
-  return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: '12h',
-    algorithm: 'HS256',
-  });
+  return jwt.sign(
+    {
+      userId: payload.userId,
+      email: payload.email,
+      nome: payload.nome,
+      role: payload.role,
+      status: payload.status,
+      stores: payload.stores,
+    },
+    JWT_SECRET,
+    {
+      expiresIn: '12h',
+      algorithm: 'HS256',
+    }
+  );
 }
 
 export function verifySessionToken(token: string): SessionPayload | null {
@@ -39,8 +64,8 @@ export function verifySessionToken(token: string): SessionPayload | null {
 }
 
 /**
- * Obtém a sessão atual validando o token JWT E revalidando em tempo real no banco de dados.
- * Isso garante revogação imediata caso o usuário seja bloqueado ou tenha suas lojas alteradas.
+ * Obtém a sessão atual validando o token JWT E revalidando no banco de dados.
+ * Garante revogação imediata caso o usuário seja bloqueado ou tenha suas lojas alteradas.
  */
 export async function getSession(): Promise<SessionPayload | null> {
   const cookieStore = await cookies();
@@ -50,7 +75,12 @@ export async function getSession(): Promise<SessionPayload | null> {
   const decoded = verifySessionToken(token);
   if (!decoded?.userId) return null;
 
-  // Revalidação em tempo real no banco de dados (Zero-Trust / Live RLS)
+  const cached = sessionCache.get(decoded.userId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
+  // Revalidação em tempo real no banco de dados (Zero-Trust / Live RLS) em 1 única query
   const dbUser = await prisma.user.findUnique({
     where: { id: decoded.userId },
     select: {
@@ -61,21 +91,38 @@ export async function getSession(): Promise<SessionPayload | null> {
       status: true,
       userStores: {
         where: { store: { ativo: true } },
-        select: { storeId: true },
+        select: {
+          storeId: true,
+          store: { select: { id: true, nome: true } },
+        },
       },
     },
   });
 
-  if (!dbUser) return null;
+  if (!dbUser) {
+    sessionCache.delete(decoded.userId);
+    return null;
+  }
 
-  return {
+  const payload: SessionPayload = {
     userId: dbUser.id,
     email: dbUser.email,
     nome: dbUser.nome,
     role: dbUser.role as SessionPayload['role'],
     status: dbUser.status as SessionPayload['status'],
     stores: dbUser.userStores.map((us) => us.storeId),
+    storeObjects: dbUser.userStores.map((us) => ({
+      id: us.store.id,
+      nome: us.store.nome,
+    })),
   };
+
+  sessionCache.set(decoded.userId, {
+    data: payload,
+    expiresAt: Date.now() + SESSION_CACHE_TTL_MS,
+  });
+
+  return payload;
 }
 
 export function canAccessStore(session: SessionPayload, storeId: string): boolean {
