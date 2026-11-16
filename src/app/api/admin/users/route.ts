@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getSession, invalidateSessionCache } from '@/lib/auth';
+import { getSession, hashPassword, invalidateSessionCache } from '@/lib/auth';
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -23,6 +23,8 @@ export async function GET(request: Request) {
       id: true,
       nome: true,
       email: true,
+      telefone: true,
+      avatarUrl: true,
       role: true,
       status: true,
       aprovadoPor: true,
@@ -52,7 +54,7 @@ export async function PATCH(request: Request) {
 
   try {
     const body = await request.json();
-    const { userId, action, role, storeIds } = body;
+    const { userId, action, role, storeIds, newPassword } = body;
 
     if (!userId || !action) {
       return NextResponse.json({ error: 'userId e action são obrigatórios.' }, { status: 400 });
@@ -72,6 +74,35 @@ export async function PATCH(request: Request) {
         { error: 'Operação bloqueada: você não pode excluir, desativar ou remover o perfil de administrador da sua própria conta.' },
         { status: 400 }
       );
+    }
+
+    if (action === 'ALTERAR_SENHA') {
+      if (!newPassword || String(newPassword).length < 6) {
+        return NextResponse.json(
+          { error: 'A nova senha deve ter no mínimo 6 caracteres.' },
+          { status: 400 }
+        );
+      }
+
+      const passwordHash = await hashPassword(String(newPassword));
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash },
+      });
+      invalidateSessionCache(user.id);
+
+      await prisma.auditLog.create({
+        data: {
+          acao: 'ALTERACAO_SENHA_POR_ADMIN',
+          userId: session.userId,
+          detalhes: JSON.stringify({ alvoUserId: user.id, email: user.email }),
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: `Senha de ${user.nome} alterada com sucesso!`,
+      });
     }
 
     if (action === 'EXCLUIR') {
@@ -133,6 +164,13 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: 'Perfil de usuário inválido.' }, { status: 400 });
       }
 
+      if (newPassword && String(newPassword).length < 6) {
+        return NextResponse.json(
+          { error: 'A nova senha deve ter no mínimo 6 caracteres.' },
+          { status: 400 }
+        );
+      }
+
       const targetStores: string[] = Array.isArray(storeIds)
         ? Array.from(new Set(storeIds.map((s) => String(s).trim()).filter(Boolean)))
         : [];
@@ -154,6 +192,11 @@ export async function PATCH(request: Request) {
         }
       }
 
+      const extraPasswordData: Record<string, any> = {};
+      if (newPassword && String(newPassword).trim().length >= 6) {
+        extraPasswordData.passwordHash = await hashPassword(String(newPassword));
+      }
+
       // Update user details & store links atomically inside a transaction
       const updatedUser = await prisma.$transaction(async (tx) => {
         const u = await tx.user.update({
@@ -163,11 +206,14 @@ export async function PATCH(request: Request) {
             status: 'APROVADO',
             aprovadoPor: session.userId,
             dataAprovacao: new Date(),
+            ...extraPasswordData,
           },
           select: {
             id: true,
             nome: true,
             email: true,
+            telefone: true,
+            avatarUrl: true,
             role: true,
             status: true,
             aprovadoPor: true,
@@ -194,6 +240,7 @@ export async function PATCH(request: Request) {
               email: user.email,
               novoRole: targetRole,
               lojas: targetStores,
+              senhaRedefinida: Boolean(extraPasswordData.passwordHash),
             }),
           },
         });

@@ -10,6 +10,8 @@ export interface SessionPayload {
   userId: string;
   email: string;
   nome: string;
+  telefone?: string | null;
+  avatarUrl?: string | null;
   role: 'ADMIN' | 'ESTAGIARIO_PADRAO' | 'ESTAGIARIO_360';
   status: 'PENDENTE' | 'APROVADO' | 'REJEITADO' | 'INATIVO';
   stores: string[]; // Lista de IDs de lojas autorizadas em tempo real
@@ -87,6 +89,8 @@ export async function getSession(): Promise<SessionPayload | null> {
       id: true,
       email: true,
       nome: true,
+      telefone: true,
+      avatarUrl: true,
       role: true,
       status: true,
       userStores: {
@@ -108,6 +112,8 @@ export async function getSession(): Promise<SessionPayload | null> {
     userId: dbUser.id,
     email: dbUser.email,
     nome: dbUser.nome,
+    telefone: dbUser.telefone,
+    avatarUrl: dbUser.avatarUrl,
     role: dbUser.role as SessionPayload['role'],
     status: dbUser.status as SessionPayload['status'],
     stores: dbUser.userStores.map((us) => us.storeId),

@@ -39,6 +39,8 @@ export async function GET() {
       id: session.userId,
       nome: session.nome,
       email: session.email,
+      telefone: session.telefone || null,
+      avatarUrl: session.avatarUrl || null,
       role: session.role,
       status: session.status,
       stores: authorizedStores,

@@ -116,6 +116,8 @@ export async function POST(request: Request) {
         id: user.id,
         nome: user.nome,
         email: user.email,
+        telefone: user.telefone || null,
+        avatarUrl: user.avatarUrl || null,
         role: user.role,
         status: user.status,
         stores: storeObjects,

@@ -7,16 +7,13 @@ import { getCachedClientUser, fetchClientUser } from '@/lib/client-auth';
 import {
   Users,
   CheckCircle2,
-  XCircle,
-  Shield,
-  Store,
   Clock,
-  AlertCircle,
   Edit2,
   UserCheck,
-  UserX,
   Search,
   Trash2,
+  KeyRound,
+  Phone,
 } from 'lucide-react';
 
 export default function UsuariosAdminPage() {
@@ -29,13 +26,22 @@ export default function UsuariosAdminPage() {
   const [stores, setStores] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Approval Modal state
+  // Approval / Edit Modal state
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [targetRole, setTargetRole] = useState<'ESTAGIARIO_PADRAO' | 'ESTAGIARIO_360' | 'ADMIN'>('ESTAGIARIO_PADRAO');
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
+  const [adminNewPassword, setAdminNewPassword] = useState('');
   const [savingApproval, setSavingApproval] = useState(false);
   const [approvalError, setApprovalError] = useState('');
+
+  // Dedicated Quick Password Modal state
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordTargetUser, setPasswordTargetUser] = useState<any>(null);
+  const [quickNewPassword, setQuickNewPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordModalMsg, setPasswordModalMsg] = useState('');
+  const [passwordModalError, setPasswordModalError] = useState('');
 
   const loadData = async () => {
     try {
@@ -77,7 +83,8 @@ export default function UsuariosAdminPage() {
   const filteredUsers = (activeTab === 'pendentes' ? pendingUsers : activeUsers).filter(
     (u) =>
       u.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchTerm.toLowerCase())
+      u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (u.telefone && u.telefone.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const openApproveModal = (u: any) => {
@@ -85,8 +92,52 @@ export default function UsuariosAdminPage() {
     setTargetRole(u.role === 'ADMIN' ? 'ADMIN' : u.role === 'ESTAGIARIO_360' ? 'ESTAGIARIO_360' : 'ESTAGIARIO_PADRAO');
     const existingStoreIds = u.userStores ? u.userStores.map((us: any) => us.storeId) : [];
     setSelectedStoreIds(existingStoreIds.length > 0 ? existingStoreIds : stores.length > 0 ? [stores[0].id] : []);
+    setAdminNewPassword('');
     setApprovalError('');
     setApprovalModalOpen(true);
+  };
+
+  const openPasswordModal = (u: any) => {
+    setPasswordTargetUser(u);
+    setQuickNewPassword('');
+    setPasswordModalError('');
+    setPasswordModalMsg('');
+    setPasswordModalOpen(true);
+  };
+
+  const handleSaveQuickPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordModalError('');
+    setPasswordModalMsg('');
+
+    if (quickNewPassword.length < 6) {
+      setPasswordModalError('A nova senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
+    setSavingPassword(true);
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: passwordTargetUser.id,
+          action: 'ALTERAR_SENHA',
+          newPassword: quickNewPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPasswordModalError(data.error || 'Erro ao alterar senha.');
+        return;
+      }
+      setPasswordModalMsg(data.message || 'Senha alterada com sucesso!');
+      setQuickNewPassword('');
+    } catch {
+      setPasswordModalError('Erro de conexão ao alterar senha.');
+    } finally {
+      setSavingPassword(false);
+    }
   };
 
   const handleReject = async (userId: string) => {
@@ -171,6 +222,11 @@ export default function UsuariosAdminPage() {
       return;
     }
 
+    if (adminNewPassword && adminNewPassword.length < 6) {
+      setApprovalError('A nova senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
     setSavingApproval(true);
     try {
       const res = await fetch('/api/admin/users', {
@@ -181,6 +237,7 @@ export default function UsuariosAdminPage() {
           action: selectedUser.status === 'PENDENTE' ? 'APROVAR' : 'ATUALIZAR',
           role: targetRole,
           storeIds: targetRole === 'ADMIN' ? [] : selectedStoreIds,
+          newPassword: adminNewPassword || undefined,
         }),
       });
 
@@ -197,6 +254,14 @@ export default function UsuariosAdminPage() {
     } finally {
       setSavingApproval(false);
     }
+  };
+
+  const getInitials = (name: string) => {
+    const parts = (name || 'U').trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+    }
+    return parts[0].slice(0, 2).toUpperCase();
   };
 
   if (loading) {
@@ -219,7 +284,7 @@ export default function UsuariosAdminPage() {
               Gestão de Usuários & Estagiários
             </h1>
             <p className="text-xs text-slate-500 font-medium">
-              Controle de acesso, aprovação de cadastros, vinculação de lojas e exclusão de contas
+              Controle de acesso, aprovação de cadastros, alteração de senhas e vinculação de lojas
             </p>
           </div>
 
@@ -230,7 +295,7 @@ export default function UsuariosAdminPage() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Buscar por nome ou e-mail..."
+                placeholder="Buscar por nome, e-mail ou telefone..."
                 className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none"
               />
             </div>
@@ -295,13 +360,32 @@ export default function UsuariosAdminPage() {
                   className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4 flex flex-col justify-between"
                 >
                   <div className="space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h4 className="font-bold text-slate-900 text-base">{u.nome}</h4>
-                        <p className="text-xs text-slate-500">{u.email}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center space-x-3">
+                        {u.avatarUrl ? (
+                          <img
+                            src={u.avatarUrl}
+                            alt={u.nome}
+                            className="w-11 h-11 rounded-full object-cover border border-amber-300 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-11 h-11 rounded-full bg-amber-100 text-amber-800 border border-amber-300 flex items-center justify-center font-bold text-xs shrink-0">
+                            {getInitials(u.nome)}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-slate-900 text-sm truncate">{u.nome}</h4>
+                          <p className="text-xs text-slate-500 truncate">{u.email}</p>
+                          {u.telefone && (
+                            <p className="text-[11px] text-slate-600 font-medium flex items-center space-x-1 mt-0.5">
+                              <Phone className="w-3 h-3 text-amber-600 shrink-0" />
+                              <span>{u.telefone}</span>
+                            </p>
+                          )}
+                        </div>
                       </div>
                       <span
-                        className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
                           u.status === 'PENDENTE'
                             ? 'bg-amber-100 text-amber-800 border-amber-300'
                             : u.status === 'APROVADO'
@@ -353,32 +437,42 @@ export default function UsuariosAdminPage() {
                   </div>
 
                   {/* Action buttons */}
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                    {!isSelf ? (
-                      <button
-                        onClick={() => handleDeleteUser(u)}
-                        title="Excluir usuário permanentemente"
-                        className="py-2 px-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-xl transition-colors flex items-center space-x-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Excluir</span>
-                      </button>
-                    ) : (
-                      <span className="text-[11px] text-slate-400 italic px-2">Sua conta atual</span>
-                    )}
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-1.5">
+                    <div className="flex items-center space-x-1">
+                      {!isSelf ? (
+                        <button
+                          onClick={() => handleDeleteUser(u)}
+                          title="Excluir usuário permanentemente"
+                          className="p-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic px-1.5">Sua conta</span>
+                      )}
 
-                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => openPasswordModal(u)}
+                        title="Modificar senha deste usuário"
+                        className="py-1.5 px-2.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-colors flex items-center space-x-1"
+                      >
+                        <KeyRound className="w-3.5 h-3.5" />
+                        <span>Senha</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center space-x-1.5">
                       {u.status === 'PENDENTE' ? (
                         <>
                           <button
                             onClick={() => handleReject(u.id)}
-                            className="py-2 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                            className="py-1.5 px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
                           >
                             Rejeitar
                           </button>
                           <button
                             onClick={() => openApproveModal(u)}
-                            className="py-2 px-3.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow transition-colors flex items-center space-x-1"
+                            className="py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow transition-colors flex items-center space-x-1"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             <span>Aprovar</span>
@@ -387,10 +481,10 @@ export default function UsuariosAdminPage() {
                       ) : (
                         <button
                           onClick={() => openApproveModal(u)}
-                          className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors flex items-center space-x-1.5"
+                          className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors flex items-center space-x-1"
                         >
                           <Edit2 className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Editar Lojas / Perfil</span>
+                          <span>Editar Perfil / Lojas</span>
                         </button>
                       )}
                     </div>
@@ -402,14 +496,81 @@ export default function UsuariosAdminPage() {
         )}
       </main>
 
+      {/* QUICK PASSWORD RESET MODAL */}
+      {passwordModalOpen && passwordTargetUser && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Modificar Senha de Usuário</h3>
+                <p className="text-xs text-slate-500">
+                  {passwordTargetUser.nome} ({passwordTargetUser.email})
+                </p>
+              </div>
+              <button
+                onClick={() => setPasswordModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            {passwordModalError && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl font-medium">
+                {passwordModalError}
+              </div>
+            )}
+
+            {passwordModalMsg && (
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl font-bold">
+                {passwordModalMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveQuickPassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Nova Senha para o Usuário
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={quickNewPassword}
+                  onChange={(e) => setQuickNewPassword(e.target.value)}
+                  placeholder="Digite a nova senha (mín. 6 caracteres)"
+                  className="w-full p-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500 font-mono"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setPasswordModalOpen(false)}
+                  className="py-2 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingPassword}
+                  className="py-2 px-4 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow transition-all disabled:opacity-60"
+                >
+                  {savingPassword ? 'Salvando...' : 'Salvar Nova Senha'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* APPROVAL / EDIT MODAL */}
       {approvalModalOpen && selectedUser && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">
-                  {selectedUser.status === 'PENDENTE' ? 'Aprovar Cadastro' : 'Editar Permissões'}
+                  {selectedUser.status === 'PENDENTE' ? 'Aprovar Cadastro' : 'Editar Permissões e Senha'}
                 </h3>
                 <p className="text-xs text-slate-500">
                   {selectedUser.nome} ({selectedUser.email})
@@ -502,7 +663,7 @@ export default function UsuariosAdminPage() {
                     )}
                   </div>
 
-                  <div className="max-h-52 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1 bg-slate-50">
+                  <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1 bg-slate-50">
                     {stores.map((s) => {
                       const isSelected = selectedStoreIds.includes(s.id);
                       return (
@@ -531,6 +692,20 @@ export default function UsuariosAdminPage() {
                 </div>
               )}
 
+              {/* Optional Password Reset inside Edit Modal */}
+              <div className="pt-2 border-t border-slate-100">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  3. Redefinir Senha do Usuário (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={adminNewPassword}
+                  onChange={(e) => setAdminNewPassword(e.target.value)}
+                  placeholder="Deixe em branco para manter a senha atual"
+                  className="w-full p-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500 font-mono"
+                />
+              </div>
+
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                 {selectedUser.id !== currentUser?.id ? (
                   <button
@@ -558,7 +733,7 @@ export default function UsuariosAdminPage() {
                     disabled={savingApproval}
                     className="py-2.5 px-5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md transition-all disabled:opacity-60"
                   >
-                    {savingApproval ? 'Salvando...' : 'Confirmar e Liberar Acesso'}
+                    {savingApproval ? 'Salvando...' : 'Salvar Alterações'}
                   </button>
                 </div>
               </div>
